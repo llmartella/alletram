@@ -21,15 +21,15 @@ jobs:
 
             const issueTitle = `Charlotte Pipe Payment 1 for ${currentMonth}`;
             const issueBody = `
-### Tasks 
-- [ ] Task 1: Get all Template data from API
-- [ ] Task 2: Get all Unspecified reports from Share File
-- [ ] Task 3: Confirm file transaction counts
-- [ ] Task 4: Compile Transaction report and Exposure Report
-- [ ] Task 5: QC Exposure Exposure Report
-- [ ] Task 6: CPF Review
-- [ ] Task 7: Iterate tasks 4-6 until CPF approval is received
-`;
+            ### Tasks 
+            - [ ] Task 1: Get all Template data from API
+            - [ ] Task 2: Get all Unspecified reports from Share File
+            - [ ] Task 3: Confirm file transaction counts
+            - [ ] Task 4: Compile Transaction report and Exposure Report
+            - [ ] Task 5: QC Exposure Exposure Report
+            - [ ] Task 6: CPF Review
+            - [ ] Task 7: Iterate tasks 4-6 until CPF approval is received
+            `;
 
             const assignee = "llmartella"; // Replace with the GitHub username of the assignee
 
