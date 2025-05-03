@@ -1,0 +1,31 @@
+name: Create Recurring Task
+
+on:
+  schedule:
+    - cron: '20 0 * * 5' # Runs every Monday at 9:00 AM UTC
+
+jobs:
+  create-task:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create a recurring task
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issueTitle = "Gather CPF files";
+            const issueBody = "Get files for payment run.";
+            const { data: issues } = await github.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+            });
+
+            const existingIssue = issues.find(issue => issue.title === issueTitle);
+            if (!existingIssue) {
+              await github.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: issueTitle,
+                body: issueBody,
+              });
+            }
