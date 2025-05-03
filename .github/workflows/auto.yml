@@ -19,7 +19,7 @@ jobs:
       # Automate issue creation and assign it to a project
       - name: Create Issue and Assign to Project
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN_1 }} # Use the default GitHub token
+          GITHUB_TOKEN: ${{ GITHUB_TOKEN }} # Use the default GitHub token
         run: |
           # Step 1: Create the issue
           ISSUE_RESPONSE=$(curl -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
