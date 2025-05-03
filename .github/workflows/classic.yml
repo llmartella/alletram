@@ -5,13 +5,13 @@ on:
   workflow_dispatch:
     inputs:
       issue_title:
-        description: 'My title'
+        description: 'Issue title'
         required: true
       issue_body:
-        description: 'My issue body'
+        description: 'Issue body'
         required: true
       issue_labels:
-        description: 'agvend'
+        description: 'Issue labels (comma-separated)'
         required: false
   # Or you can set up other triggers
   # For example, to run on push to main branch:
@@ -25,12 +25,22 @@ jobs:
       - name: Create Issue
         id: create-issue
         uses: actions/github-script@v6
+        env:
+          REPO_OWNER: $llmartella # Default to current repo owner
+          REPO_NAME: $alletram # Default to current repo name
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            // Use the repository where the workflow is running by default
+            // You can override these values in repository secrets or directly here
+            const owner = process.env.REPO_OWNER || context.repo.owner;
+            const repo = process.env.REPO_NAME || context.repo.repo;
+            
+            console.log(`Creating issue in ${owner}/${repo}`);
+            
             const { data: issue } = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner: owner,
+              repo: repo,
               title: '${{ github.event.inputs.issue_title || 'Automated Issue' }}',
               body: '${{ github.event.inputs.issue_body || 'This issue was automatically created by the GitHub Action workflow.' }}',
               labels: '${{ github.event.inputs.issue_labels }}'.split(',').filter(Boolean)
