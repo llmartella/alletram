@@ -43,7 +43,7 @@ jobs:
             console.log("Created issue:", issue);
 
             // Step 2: Add the issue to a GitHub Project (v2) using GraphQL
-            const projectId = "3"; // Replace with your project ID
+            const projectId = "PVT_kwHODDdG4s4A194P"; // Replace with your project ID
             const statusFieldId = "181829972"; // Replace with your project's Status field ID
             const statusValueId = "61e4505c"; // Replace with the desired Status value ID (e.g., "To Do")
 
