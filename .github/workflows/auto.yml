@@ -5,7 +5,7 @@ on:
 
 permissions:
   issues: write
-  projects: write
+
 
 jobs:
   automate-issue:
