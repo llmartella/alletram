@@ -1,4 +1,6 @@
 name: Create Recurring Task
+on:
+  workflow_dispatch:
 
 on:
   schedule:
