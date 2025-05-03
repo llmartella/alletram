@@ -5,6 +5,9 @@ on:
 
 
 jobs:
+create-task:
+    runs-on: ubuntu-latest
+steps:
   - name: Create a recurring task
     uses: actions/github-script@v6
     with:
