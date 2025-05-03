@@ -4,7 +4,7 @@ on:
 
 
 
-steps:
+jobs:
   - name: Create a recurring task
     uses: actions/github-script@v6
     with:
