@@ -3,20 +3,10 @@ name: Create Issue and Assign to Project
 on:
   # You can trigger this workflow manually from the Actions tab
   workflow_dispatch:
-    inputs:
-      issue_title:
-        description: 'Issue title'
-        required: true
-      issue_body:
-        description: 'Issue body'
-        required: true
-      issue_labels:
-        description: 'Issue labels (comma-separated)'
-        required: false
   # Or you can set up other triggers
-  # For example, to run on push to main branch:
-  # push:
-  #   branches: [ main ]
+  # For example, to run on a schedule (first day of each month)
+  schedule:
+    - cron: '0 0 1 * *'  # Runs at 00:00 on the 1st of every month
 
 jobs:
   create-issue-and-assign-to-project:
@@ -32,15 +22,45 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             
-            console.log(`Creating issue in $llmartella/$alletram`);
+            // Generate dynamic title with current month and year
+            const date = new Date();
+            const months = ['January', 'February', 'March', 'April', 'May', 'June', 
+                           'July', 'August', 'September', 'October', 'November', 'December'];
+            const currentMonth = months[date.getMonth()];
+            const currentYear = date.getFullYear();
+            
+            // Create issue title with dynamic month/year
+            const issueTitle = `Monthly Tasks for ${currentMonth} ${currentYear}`;
+            
+            // Create issue body with a list
+            const issueBody = `## Monthly Tasks
+            
+            Here's what needs to be done this month:
+            
+            - [ ] Review previous month's metrics
+            - [ ] Update documentation
+            - [ ] Schedule team retrospective
+            - [ ] Plan for next month's objectives
+            - [ ] Security audit review
+            
+            Please complete all tasks by the end of the month.`;
+            
+            // Define labels to apply
+            const labels = ['cpf'];
+            
+            // Define assignees (GitHub usernames)
+            const assignees = ['llmartella']; // Replace with actual GitHub usernames
+            
+            console.log(`Creating issue in ${owner}/${repo}`);
             
             try {
               const { data: issue } = await github.rest.issues.create({
                 owner: owner,
                 repo: repo,
-                title: '${{ github.event.inputs.issue_title || 'Automated Issue' }}',
-                body: '${{ github.event.inputs.issue_body || 'This issue was automatically created by the GitHub Action workflow.' }}',
-                labels: '${{ github.event.inputs.issue_labels }}'.split(',').filter(Boolean).map(label => label.trim())
+                title: issueTitle,
+                body: issueBody,
+                labels: labels,
+                assignees: assignees
               });
               console.log(`Created issue #${issue.number}: ${issue.title}`);
               return { issue_number: issue.number, issue_id: issue.node_id };
@@ -59,32 +79,101 @@ jobs:
             // Get the issue ID from the previous step
             const issueId = JSON.parse(process.env.ISSUE_ID || '{}').issue_id;
             const projectId = 'PVT_kwHODDdG4s4A194P'; // Replace with your project ID
+            const statusValue = 'Ready'; // Replace with the exact status value you want to set
             
             if (!issueId) {
               core.setFailed('Issue ID not found');
               return;
             }
             
-            // GraphQL mutation to add the issue to the project
-            const addToProjectMutation = `
-              mutation {
-                addProjectV2ItemById(input: {
-                  projectId: "${projectId}"
-                  contentId: "${issueId}"
-                }) {
-                  item {
-                    id
+            try {
+              // Step 1: Add the issue to the project
+              console.log('Adding issue to project...');
+              const addResponse = await github.graphql(`
+                mutation {
+                  addProjectV2ItemById(input: {
+                    projectId: "${projectId}"
+                    contentId: "${issueId}"
+                  }) {
+                    item {
+                      id
+                    }
                   }
                 }
+              `);
+              
+              const itemId = addResponse.addProjectV2ItemById.item.id;
+              console.log(`Issue added to project with item ID: ${itemId}`);
+              
+              // Step 2: Get the project's field IDs
+              console.log('Getting project fields...');
+              const fieldsResponse = await github.graphql(`
+                query {
+                  node(id: "${projectId}") {
+                    ... on ProjectV2 {
+                      fields(first: 20) {
+                        nodes {
+                          ... on ProjectV2Field {
+                            id
+                            name
+                          }
+                          ... on ProjectV2SingleSelectField {
+                            id
+                            name
+                            options {
+                              id
+                              name
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              `);
+              
+              // Find the status field and the specific option value
+              const statusField = fieldsResponse.node.fields.nodes.find(field => 
+                field.name.toLowerCase() === 'status' && field.options);
+                
+              if (!statusField) {
+                console.log('Status field not found. Available fields:');
+                console.log(fieldsResponse.node.fields.nodes.map(f => f.name));
+                return;
               }
-            `;
-            
-            try {
-              const result = await github.graphql(addToProjectMutation);
-              console.log('Issue added to project successfully');
-              console.log(result);
+              
+              const statusOption = statusField.options.find(option => 
+                option.name === statusValue);
+                
+              if (!statusOption) {
+                console.log(`Status value "${statusValue}" not found. Available options:`);
+                console.log(statusField.options.map(o => o.name));
+                return;
+              }
+              
+              // Step 3: Update the item's status
+              console.log(`Setting status to "${statusValue}"...`);
+              const updateResponse = await github.graphql(`
+                mutation {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: "${projectId}"
+                    itemId: "${itemId}"
+                    fieldId: "${statusField.id}"
+                    value: { 
+                      singleSelectOptionId: "${statusOption.id}"
+                    }
+                  }) {
+                    projectV2Item {
+                      id
+                    }
+                  }
+                }
+              `);
+              
+              console.log('Issue status updated successfully.');
+              
             } catch (error) {
-              console.log('Error adding issue to project:');
+              console.log('Error working with project:');
               console.log(error);
               core.setFailed(error.message);
             }
