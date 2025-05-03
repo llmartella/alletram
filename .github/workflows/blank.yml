@@ -2,9 +2,7 @@ name: Create Recurring Task
 on:
   workflow_dispatch:
 
-on:
-  schedule:
-    - cron: '45 0 * * 6' # Runs every Monday at 9:00 AM UTC
+
 
 jobs:
   create-task:
