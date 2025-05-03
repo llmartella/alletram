@@ -77,3 +77,15 @@ jobs:
 
             const result = await github.graphql(mutation, variables);
             console.log("Issue added to project and status updated:", result);
+
+            try {
+            const result = await github.graphql(mutation, variables);
+            console.log("Issue added to project and status updated:", result);
+          } catch (error) {
+            console.error("GraphQL Error:", error);
+          }
+
+          console.log("Project ID:", projectId);
+          console.log("Status Field ID:", statusFieldId);
+          console.log("Status Value ID:", statusValueId);
+          console.log("Content ID (node_id):", issue.node_id);
