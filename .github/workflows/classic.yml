@@ -1,0 +1,53 @@
+name: Create Issue and Assign to Classic Project
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create_issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Issue
+        id: create_issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            const now = new Date();
+            const month = now.toLocaleString('default', { month: 'long' });
+            const title = `Monthly Report - ${month}`;
+            const body = `
+            ### Tasks
+            - [ ] Task 1
+            - [ ] Task 2
+            - [ ] Task 3
+            `;
+
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['Report'],
+              assignees: ['llmartella']
+            });
+
+            return issue.data.number;
+
+      - name: Add issue to Classic Project column
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          ISSUE_NUMBER=${{ steps.create_issue.outputs.result }}
+          
+          # Get issue ID (needed to add to project)
+          ISSUE_ID=$(gh api repos/${{ github.repository }}/issues/$ISSUE_NUMBER --jq .id)
+
+          # Get project ID and column ID
+          PROJECT_ID=$(gh api repos/${{ github.repository }}/projects --jq '.[] | select(.name=="kanban") | .id')
+          COLUMN_ID=$(gh api repos/${{ github.repository }}/projects/$PROJECT_ID/columns --jq '.[] | select(.name=="Ready") | .id')
+
+          # Create a card in the column for the issue
+          gh api projects/columns/$COLUMN_ID/cards \
+            -f content_id=$ISSUE_ID \
+            -f content_type=Issue
