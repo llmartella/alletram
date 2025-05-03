@@ -1,31 +1,34 @@
+uses: actions/github-script@v6
+
 name: Create Recurring Task
 on:
   workflow_dispatch:
 
 
 
-jobs:
-  create-task:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Create a recurring task
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const issueTitle = "Gather CPF files";
-            const issueBody = "Get files for payment run.";
-            const { data: issues } = await github.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: "open",
-            });
+steps:
+  - name: Create a recurring task
+    uses: actions/github-script@v6
+    with:
+      script: |
+        const { data: issues } = await github.rest.issues.listForRepo({
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          state: "open",
+        });
 
-            const existingIssue = issues.find(issue => issue.title === issueTitle);
-            if (!existingIssue) {
-              await github.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: issueTitle,
-                body: issueBody,
-              });
-            }
+        const issueTitle = "Weekly Task";
+        const issueBody = "This is your recurring weekly task.";
+
+        const existingIssue = issues.find(issue => issue.title === issueTitle);
+        if (!existingIssue) {
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: issueTitle,
+            body: issueBody,
+          });
+        }
+
+permissions:
+  issues: write
