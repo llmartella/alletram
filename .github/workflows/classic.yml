@@ -1,70 +1,75 @@
-name: Create Issue and Assign to Classic Project
+name: Create Issue and Assign to Project
 
 on:
+  # You can trigger this workflow manually from the Actions tab
   workflow_dispatch:
+    inputs:
+      issue_title:
+        description: 'My title'
+        required: true
+      issue_body:
+        description: 'My issue body'
+        required: true
+      issue_labels:
+        description: 'agvend'
+        required: false
+  # Or you can set up other triggers
+  # For example, to run on push to main branch:
+  # push:
+  #   branches: [ main ]
 
 jobs:
-  create_issue:
+  create-issue-and-assign-to-project:
     runs-on: ubuntu-latest
     steps:
-      - name: Install GitHub CLI
-        run: |
-          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
-          sudo apt-add-repository https://cli.github.com/packages
-          sudo apt update
-          sudo apt install gh -y
-
-      - name: Authenticate GitHub CLI
-        run: echo "${{ secrets.GH_PAT }}" | gh auth login --with-token
-
-      - name: Get current month
-        id: get_month
-        run: echo "month=$(date +'%B')" >> $GITHUB_OUTPUT
-
       - name: Create Issue
-        id: create_issue
-        run: |
-          ISSUE_URL=$(gh issue create \
-            --title "Monthly Report - ${{ steps.get_month.outputs.month }}" \
-            --body "- [ ] Collect data\n- [ ] Validate data\n- [ ] Write report\n- [ ] Submit report" \
-            --label "monthly-report" \
-            --assignee "llmartella" \
-            --repo $alletram \
-            --json url,number --template '' | jq -r '.url')
-          echo "issue_url=$ISSUE_URL" >> $GITHUB_OUTPUT
+        id: create-issue
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '${{ github.event.inputs.issue_title || 'Automated Issue' }}',
+              body: '${{ github.event.inputs.issue_body || 'This issue was automatically created by the GitHub Action workflow.' }}',
+              labels: '${{ github.event.inputs.issue_labels }}'.split(',').filter(Boolean)
+            });
+            console.log(`Created issue #${issue.number}: ${issue.title}`);
+            return { issue_number: issue.number, issue_id: issue.node_id };
 
-      - name: Add Issue to Classic Project 
-        run: |
-          ISSUE_ID=$(gh issue view ${{ steps.create_issue.outputs.issue_url }} --json id | jq -r '.id')
-          PROJECT_ID=$(gh api graphql -f query='
-            query {
-              repository(owner: "llmartella", name: "'$alletram'") {
-                projects(first: 10) {
-                  nodes {
+      - name: Add Issue to Project
+        uses: actions/github-script@v6
+        env:
+          ISSUE_ID: ${{ fromJSON(steps.create-issue.outputs.result).issue_id }}
+          PROJECT_ID: 'VT_kwHODDdG4s4A194P' # Replace with your project ID
+        with:
+          github-token: ${{ secrets.PROJECTS_TOKEN_1 }} # Personal access token with project permissions
+          script: |
+            // Get project ID from environment variable
+            const projectId = process.env.PROJECT_ID;
+            const issueId = process.env.ISSUE_ID;
+            
+            // GraphQL mutation to add the issue to the project
+            const addToProjectMutation = `
+              mutation {
+                addProjectV2ItemById(input: {
+                  projectId: "${projectId}"
+                  contentId: "${issueId}"
+                }) {
+                  item {
                     id
-                    name
                   }
                 }
               }
-            }' | jq -r '.data.repository.projects.nodes[] | select(.name == "kanban") | .id')
-
-          COLUMN_ID=$(gh api graphql -f query='
-            query {
-              repository(owner: "llmartella", name: "'$alletram'") {
-                projects(first: 10) {
-                  nodes {
-                    columns(first: 10) {
-                      nodes {
-                        id
-                        name
-                      }
-                    }
-                  }
-                }
-              }
-            }' | jq -r '.data.repository.projects.nodes[].columns.nodes[] | select(.name == "Ready") | .id')
-
-          # Add issue to project column
-          gh api --method POST /projects/columns/$COLUMN_ID/cards \
-            -F content_id=$ISSUE_ID \
-            -F content_type=Issue
+            `;
+            
+            try {
+              const result = await github.graphql(addToProjectMutation);
+              console.log('Issue added to project successfully');
+              console.log(result);
+            } catch (error) {
+              console.log('Error adding issue to project:');
+              console.log(error);
+              core.setFailed(error.message);
+            }
