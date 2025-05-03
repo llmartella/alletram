@@ -1,7 +1,11 @@
 name: Assign Task Workflow
 
+#on:
+  #workflow_dispatch: # Allows manual triggering of the workflow
+
 on:
-  workflow_dispatch: # Allows manual triggering of the workflow
+  schedule:
+    - cron: '0 12 1-7 * 6' #1st Saturday at 8am ET
 
 jobs:
   assign-task:
@@ -12,8 +16,8 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const issueTitle = "Assigned Task";
-            const issueBody = "This is a task assigned to a specific user.";
+            const issueTitle = "Assigned Task on Schedule";
+            const issueBody = "This is a task assigned to llmartella.";
             const assignee = "llmartella"; // Replace with the GitHub username of the assignee
 
             await github.rest.issues.create({
