@@ -2,19 +2,19 @@ name: Create Monthly Task
 
 on:
   schedule:
-    - cron: '32 1 1-7 * 6' # First Saturday of every month at 8:00 AM ET (12:00 PM UTC)
+    - cron: '0 12 1-7 * 6' # First Saturday of every month at 8:00 AM ET (12:00 PM UTC)
   workflow_dispatch: # Allows manual triggering of the workflow
 
 permissions:
   issues: write
-  projects: write
+  contents: read
 
 jobs:
   create-task:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Create a task with a bullet list and assign it
+      - name: Create a task and add it to a project
         uses: actions/github-script@v6
         with:
           script: |
@@ -24,37 +24,53 @@ jobs:
             ];
             const currentMonth = monthNames[new Date().getUTCMonth()]; // Get the current month name
 
-            const issueTitle = `Charlotte Pipe Payment 1 for ${currentMonth}`;
-            const issueBody = `
-            ### Tasks 
-            - [ ] Task 1: Get all Template data from API
-            - [ ] Task 2: Get all Unspecified reports from Share File
-            - [ ] Task 3: Confirm file transaction counts
-            - [ ] Task 4: Compile Transaction report and Exposure Report
-            - [ ] Task 5: QC Exposure Exposure Report
-            - [ ] Task 6: CPF Review
-            - [ ] Task 7: Iterate tasks 4-6 until CPF approval is received
-            `;
-
-            const assignee = "llmartella"; // Replace with the GitHub username of the assignee
-            const label = "agvend"; // Replace with the desired label
-            const projectId = 3; // Replace with your project ID
-            const statusFieldId = "181829972"; // Replace with your project's status field ID
-            const statusValueId = "61e4505c"; // Replace with the desired status value ID
-
-
-            await github.rest.issues.create({
+            // Step 1: Create the issue
+            const { data: issue } = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: issueTitle,
-              body: issueBody,
-              assignees: [assignee], // Add the assignee here
-              labels: ["agvend"], // Add the label here
+              title: `Monthly Task for ${currentMonth}`,
+              body: `
+              ### Tasks for ${currentMonth}
+              - [ ] Task 1: Review the monthly report
+              - [ ] Task 2: Update project documentation
+              - [ ] Task 3: Conduct team meeting
+              - [ ] Task 4: Plan for next month
+                            `,
+              assignees: ["llmartella"], // Replace with the GitHub username
+              labels: ["agvend"], // Replace with your desired label
             });
 
-             // Add the issue to a project
-            await github.rest.projects.items.addToProject({
-              project_id: projectId,
-              content_id: issue.id,
-              content_type: "Issue",
-            });
+            // Step 2: Add the issue to a GitHub Project (v2) using GraphQL
+            const projectId = "3"; // Replace with your project ID
+            const statusFieldId = "181829972"; // Replace with your project's Status field ID
+            const statusValueId = "61e4505c"; // Replace with the desired Status value ID (e.g., "To Do")
+
+            const mutation = `
+              mutation($projectId: ID!, $contentId: ID!, $statusFieldId: ID!, $statusValueId: String!) {
+                addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                  item {
+                    id
+                  }
+                }
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId,
+                  itemId: $contentId,
+                  fieldId: $statusFieldId,
+                  value: { singleSelectOptionId: $statusValueId }
+                }) {
+                  projectV2Item {
+                    id
+                  }
+                }
+              }
+            `;
+
+            const variables = {
+              projectId: projectId,
+              contentId: issue.node_id, // Use the issue's node_id for GraphQL
+              statusFieldId: statusFieldId,
+              statusValueId: statusValueId,
+            };
+
+            const result = await github.graphql(mutation, variables);
+            console.log("Issue added to project and status updated:", result);
