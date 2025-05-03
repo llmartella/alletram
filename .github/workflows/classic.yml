@@ -25,40 +25,45 @@ jobs:
       - name: Create Issue
         id: create-issue
         uses: actions/github-script@v6
-        env:
-          REPO_OWNER: $llmartella # Default to current repo owner
-          REPO_NAME: $alletram # Default to current repo name
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // Use the repository where the workflow is running by default
-            // You can override these values in repository secrets or directly here
-            const owner = process.env.REPO_OWNER || context.repo.owner;
-            const repo = process.env.REPO_NAME || context.repo.repo;
+            // Using context.repo to get the current repository information
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
             
-            console.log(`Creating issue in ${owner}/${repo}`);
+            console.log(`Creating issue in $llmartella/$alletram`);
             
-            const { data: issue } = await github.rest.issues.create({
-              owner: owner,
-              repo: repo,
-              title: '${{ github.event.inputs.issue_title || 'Automated Issue' }}',
-              body: '${{ github.event.inputs.issue_body || 'This issue was automatically created by the GitHub Action workflow.' }}',
-              labels: '${{ github.event.inputs.issue_labels }}'.split(',').filter(Boolean)
-            });
-            console.log(`Created issue #${issue.number}: ${issue.title}`);
-            return { issue_number: issue.number, issue_id: issue.node_id };
+            try {
+              const { data: issue } = await github.rest.issues.create({
+                owner: owner,
+                repo: repo,
+                title: '${{ github.event.inputs.issue_title || 'Automated Issue' }}',
+                body: '${{ github.event.inputs.issue_body || 'This issue was automatically created by the GitHub Action workflow.' }}',
+                labels: '${{ github.event.inputs.issue_labels }}'.split(',').filter(Boolean).map(label => label.trim())
+              });
+              console.log(`Created issue #${issue.number}: ${issue.title}`);
+              return { issue_number: issue.number, issue_id: issue.node_id };
+            } catch (error) {
+              console.log('Error creating issue:');
+              console.log(error);
+              core.setFailed(error.message);
+              return {};
+            }
 
       - name: Add Issue to Project
         uses: actions/github-script@v6
-        env:
-          ISSUE_ID: ${{ fromJSON(steps.create-issue.outputs.result).issue_id }}
-          PROJECT_ID: 'VT_kwHODDdG4s4A194P' # Replace with your project ID
         with:
           github-token: ${{ secrets.PROJECTS_TOKEN_1 }} # Personal access token with project permissions
           script: |
-            // Get project ID from environment variable
-            const projectId = process.env.PROJECT_ID;
-            const issueId = process.env.ISSUE_ID;
+            // Get the issue ID from the previous step
+            const issueId = JSON.parse(process.env.ISSUE_ID || '{}').issue_id;
+            const projectId = 'PVT_kwHODDdG4s4A194P'; // Replace with your project ID
+            
+            if (!issueId) {
+              core.setFailed('Issue ID not found');
+              return;
+            }
             
             // GraphQL mutation to add the issue to the project
             const addToProjectMutation = `
@@ -83,3 +88,5 @@ jobs:
               console.log(error);
               core.setFailed(error.message);
             }
+        env:
+          ISSUE_ID: ${{ steps.create-issue.outputs.result }}
