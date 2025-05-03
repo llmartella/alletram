@@ -1,35 +1,28 @@
-name: Create Recurring Task
+name: Assign Task Workflow
+
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Allows manual triggering of the workflow
 
 jobs:
-  create-task:
+  assign-task:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Create a recurring task
+      - name: Assign a task to someone
         uses: actions/github-script@v6
         with:
           script: |
-            const { data: issues } = await github.rest.issues.listForRepo({
+            const issueTitle = "Assigned Task";
+            const issueBody = "This is a task assigned to a specific user.";
+            const assignee = "llmartella"; // Replace with the GitHub username of the assignee
+
+            await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: "open",
+              title: issueTitle,
+              body: issueBody,
+              assignees: [llmartella],
             });
-    
-            const issueTitle = "Weekly Task 2";
-            const issueBody = "This is your recurring weekly task 2.";
-            const assignee = "llmartella"; // Replace with the GitHub username of the assignee;
-    
-            const existingIssue = issues.find(issue => issue.title === issueTitle);
-            if (!existingIssue) {
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: issueTitle,
-                body: issueBody,
-                assignees: [llmartella],
-              });
-            }
 
 permissions:
   issues: write
