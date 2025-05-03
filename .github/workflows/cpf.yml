@@ -1,4 +1,4 @@
-name: Create Monthly Task
+name: Create Monthly CPF Task
 
 on:
   schedule:
@@ -25,7 +25,7 @@ jobs:
               "title": "Monthly Task for '"$(date +'%B')"'", 
               "body": "### Tasks for '"$(date +'%B')"'\n- [ ] Task 1\n- [ ] Task 2\n- [ ] Task 3", 
               "assignees": ["llmartella"], 
-              "labels": ["monthly-cpf-task"]
+              "labels": ["agvend"]
             }' \
             https://api.github.com/repos/llmartella/alletram/issues)
 
