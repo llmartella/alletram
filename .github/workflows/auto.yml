@@ -1,0 +1,47 @@
+name: Automate Issue Creation and Project Assignment
+
+on:
+  workflow_dispatch: # Allows manual triggering
+
+permissions:
+  issues: write
+  projects: write
+
+jobs:
+  automate-issue:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the repository
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      # Automate issue creation and assign it to a project
+      - name: Create Issue and Assign to Project
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN_1 }} # Use the default GitHub token
+        run: |
+          # Step 1: Create the issue
+          ISSUE_RESPONSE=$(curl -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "title": "Automated Issue Title",
+              "body": "This issue was created automatically.",
+              "labels": ["automation"]
+            }' \
+            https://api.github.com/repos/${{ github.repository }}/issues)
+
+          # Extract the issue node_id
+          ISSUE_NODE_ID=$(echo "$ISSUE_RESPONSE" | jq -r '.node_id')
+
+          # Step 2: Add the issue to a project
+          PROJECT_ID="PVT_kwHODDdG4s4A194P" # Replace with your project ID
+          curl -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "projectId": "'"$PROJECT_ID"'",
+              "contentId": "'"$ISSUE_NODE_ID"'"
+            }' \
+            https://api.github.com/graphql
+
+          echo "Issue created and assigned to project successfully!"
