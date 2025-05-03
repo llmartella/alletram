@@ -24,10 +24,10 @@ jobs:
             -d '{
               "title": "Monthly Task for '"$(date +'%B')"'", 
               "body": "### Tasks for '"$(date +'%B')"'\n- [ ] Task 1\n- [ ] Task 2\n- [ ] Task 3", 
-              "assignees": ["username"], 
-              "labels": ["monthly-task"]
+              "assignees": ["llmartella"], 
+              "labels": ["agvend"]
             }' \
-            https://api.github.com/repos/owner/repo/issues)
+            https://api.github.com/repos/llmartella/alletram/issues)
 
           # Extract the issue node_id
           ISSUE_NODE_ID=$(echo "$ISSUE_RESPONSE" | jq -r '.node_id')
@@ -36,7 +36,7 @@ jobs:
           curl -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{
-              "projectId": "PVT_123456", 
+              "projectId": "PVT_kwHODDdG4s4A194P", 
               "contentId": "'"$ISSUE_NODE_ID"'"
             }' \
             https://api.github.com/graphql
