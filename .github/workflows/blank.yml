@@ -16,8 +16,8 @@ jobs:
               state: "open",
             });
     
-            const issueTitle = "Weekly Task";
-            const issueBody = "This is your recurring weekly task.";
+            const issueTitle = "Weekly Task 2";
+            const issueBody = "This is your recurring weekly task 2.";
     
             const existingIssue = issues.find(issue => issue.title === issueTitle);
             if (!existingIssue) {
@@ -26,6 +26,7 @@ jobs:
                 repo: context.repo.repo,
                 title: issueTitle,
                 body: issueBody,
+                assignees: [llmartella],
               });
             }
 
