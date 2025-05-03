@@ -1,53 +1,50 @@
-name: Create Issue and Assign to Classic Project
+name: Create Issue and Add to Classic Project
 
 on:
   workflow_dispatch:
 
 jobs:
-  create_issue:
+  create_issue_and_add_to_project:
     runs-on: ubuntu-latest
     steps:
-      - name: Create GitHub Issue
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up GitHub CLI
+        uses: cli/cli-action@v2
+
+      - name: Create issue
         id: create_issue
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GH_PAT }}
-          script: |
-            const now = new Date();
-            const month = now.toLocaleString('default', { month: 'long' });
-            const title = `Monthly Report - ${month}`;
-            const body = `
-            ### Tasks
-            - [ ] Task 1
-            - [ ] Task 2
-            - [ ] Task 3
-            `;
-
-            const issue = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: title,
-              body: body,
-              labels: ['Report'],
-              assignees: ['llmartella']
-            });
-
-            return issue.data.number;
-
-      - name: Add issue to Classic Project column
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          ISSUE_NUMBER=${{ steps.create_issue.outputs.result }}
-          
-          # Get issue ID (needed to add to project)
-          ISSUE_ID=$(gh api repos/${{ github.repository }}/issues/$ISSUE_NUMBER --jq .id)
+          TITLE="Monthly Report - $(date +'%B')"
+          BODY=$'- [ ] Task 1\n- [ ] Task 2\n- [ ] Task 3'
+          ISSUE_JSON=$(gh issue create \
+            --title "$TITLE" \
+            --body "$BODY" \
+            --label "automation" \
+            --assignee "llmartella" \
+            --repo llmartella/alletram \
+            --json number,id)
+          echo "$ISSUE_JSON"
+          echo "issue_number=$(echo $ISSUE_JSON | jq .number)" >> $GITHUB_OUTPUT
+          echo "issue_id=$(echo $ISSUE_JSON | jq -r .id)" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          # Get project ID and column ID
-          PROJECT_ID=$(gh api repos/${{ github.repository }}/projects --jq '.[] | select(.name=="kanban") | .id')
-          COLUMN_ID=$(gh api repos/${{ github.repository }}/projects/$PROJECT_ID/columns --jq '.[] | select(.name=="Ready") | .id')
+      - name: Get project and column IDs
+        id: get_project_info
+        run: |
+          PROJECT_ID=$(gh api repos/amfaro/REPO_NAME/projects --jq '.[] | select(.name=="kanban") | .id')
+          COLUMN_ID=$(gh api repos/amfaro/REPO_NAME/projects/$PROJECT_ID/columns --jq '.[] | select(.name=="Ready") | .id')
+          echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
+          echo "column_id=$COLUMN_ID" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          # Create a card in the column for the issue
-          gh api projects/columns/$COLUMN_ID/cards \
-            -f content_id=$ISSUE_ID \
+      - name: Add issue to project column
+        run: |
+          gh api repos/amfaro/REPO_NAME/projects/${{ steps.get_project_info.outputs.project_id }}/columns/${{ steps.get_project_info.outputs.column_id }}/cards \
+            -f content_id=${{ steps.create_issue.outputs.issue_id }} \
             -f content_type=Issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
