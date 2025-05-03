@@ -18,6 +18,7 @@ jobs:
     
             const issueTitle = "Weekly Task 2";
             const issueBody = "This is your recurring weekly task 2.";
+            const assignee = "username"; // Replace with the GitHub username of the assignee;
     
             const existingIssue = issues.find(issue => issue.title === issueTitle);
             if (!existingIssue) {
