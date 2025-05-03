@@ -72,10 +72,6 @@ jobs:
               statusValueId: statusValueId,
             };
 
-            console.log("Project ID:", projectId);
-            console.log("Content ID:", issue.node_id);
-            console.log("Status Field ID:", statusFieldId);
-            console.log("Status Value ID:", statusValueId);
 
             const result = await github.graphql(mutation, variables);
             console.log("Issue added to project and status updated:", result);
