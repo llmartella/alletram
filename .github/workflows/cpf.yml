@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Create an issue and assign it to a project
         env:
-          GITHUB_TOKEN: ${{ secrets.PROJECTS_TOKEN }} # Use the PAT stored as a secret
+          GITHUB_TOKEN: ${{ secrets.PROJECTS_TOKEN_1 }} # Use the PAT stored as a secret
         run: |
           # Step 1: Create the issue
           ISSUE_RESPONSE=$(curl -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
