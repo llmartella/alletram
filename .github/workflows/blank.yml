@@ -1,5 +1,3 @@
-uses: actions/github-script@v6
-
 name: Create Recurring Task
 on:
   workflow_dispatch:
