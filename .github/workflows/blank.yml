@@ -1,32 +1,43 @@
-name: Assign Task Workflow
-
-#on:
-  #workflow_dispatch: # Allows manual triggering of the workflow
+name: Create Monthly Task
 
 on:
   schedule:
-    - cron: '0 12 1-7 * 6' #1st Saturday at 8am ET
+    - cron: '11 1 1-7 * 6' # First Saturday of every month at 8:00 AM ET (12:00 PM UTC)
 
 jobs:
-  assign-task:
+  create-task:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Assign a task to someone
+      - name: Create a task with the current month name
         uses: actions/github-script@v6
         with:
           script: |
-            const issueTitle = "Assigned Task on Schedule";
-            const issueBody = "This is a task assigned to llmartella.";
-            const assignee = "llmartella"; // Replace with the GitHub username of the assignee
+            const monthNames = [
+              "January", "February", "March", "April", "May", "June",
+              "July", "August", "September", "October", "November", "December"
+            ];
+            const currentMonth = monthNames[new Date().getUTCMonth()]; // Get the current month name
+
+            const issueTitle = `Charlotte Pipe & Foundry Payment 1 for ${currentMonth}`;
+            const assignee = "llmartella"; // Replace with the correct GitHub username
+            const issueBody = `
+  ### CPF Payment 1 for ${currentMonth}
+  Process all files and create Exposure for payment 1 of ${currentMonth}.
+- [ ] Task 1: Get all Template data from API
+- [ ] Task 2: Get all Unspecified reports from Share File
+- [ ] Task 3: Confirm file transaction counts
+- [ ] Task 4: Compile Transaction report and Exposure Report
+- [ ] Task 5: QC Exposure Exposure Report
+- [ ] Task 6: CPF Review
+- [ ] Task 7: Iterate tasks 4-6 until CPF approval is received
+`;
+
 
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: issueTitle,
               body: issueBody,
-              assignees: ["llmartella"],
+              assignees: ["llmartella"], // Assignee must be a string in an array,
             });
-
-permissions:
-  issues: write
