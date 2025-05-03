@@ -19,9 +19,9 @@ jobs:
             ];
             const currentMonth = monthNames[new Date().getUTCMonth()]; // Get the current month name
 
-            const issueTitle = `Monthly Task for ${currentMonth}`;
+            const issueTitle = `Charlotte Pipe Payment 1 for ${currentMonth}`;
             const issueBody = `
-### Tasks for ${currentMonth}
+### Tasks 
 - [ ] Task 1: Get all Template data from API
 - [ ] Task 2: Get all Unspecified reports from Share File
 - [ ] Task 3: Confirm file transaction counts
