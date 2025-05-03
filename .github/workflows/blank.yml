@@ -5,6 +5,9 @@ on:
     - cron: '32 1 1-7 * 6' # First Saturday of every month at 8:00 AM ET (12:00 PM UTC)
   workflow_dispatch: # Allows manual triggering of the workflow
 
+permissions:
+  issues: write
+
 jobs:
   create-task:
     runs-on: ubuntu-latest
