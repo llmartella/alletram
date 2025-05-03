@@ -48,4 +48,12 @@ jobs:
               title: issueTitle,
               body: issueBody,
               assignees: [assignee], // Add the assignee here
+              labels: ["agvend"], // Add the label here
+            });
+
+             // Add the issue to a project
+            await github.rest.projects.items.addToProject({
+              project_id: projectId,
+              content_id: issue.id,
+              content_type: "Issue",
             });
