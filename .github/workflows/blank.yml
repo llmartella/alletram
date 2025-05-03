@@ -2,7 +2,7 @@ name: Create Recurring Task
 
 on:
   schedule:
-    - cron: '20 0 * * 5' # Runs every Monday at 9:00 AM UTC
+    - cron: '45 0 * * 6' # Runs every Monday at 9:00 AM UTC
 
 jobs:
   create-task:
