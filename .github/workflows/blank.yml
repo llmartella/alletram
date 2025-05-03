@@ -67,7 +67,7 @@ jobs:
 
             const variables = {
               projectId: projectId,
-              contentId: issue.node_id, // Use the issue's node_id for GraphQL
+              contentId: issue.R_kgDOOUHlgw, // Use the issue's node_id for GraphQL
               statusFieldId: statusFieldId,
               statusValueId: statusValueId,
             };
