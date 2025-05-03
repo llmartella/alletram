@@ -22,7 +22,7 @@ jobs:
           ISSUE_RESPONSE=$(curl -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{
-              "title": "Monthly Task for '"$(date +'%B')"'", 
+              "title": "CPF LM-1 Task for '"$(date +'%B')"'", 
               "body": "### Tasks for '"$(date +'%B')"'\n- [ ] Task 1\n- [ ] Task 2\n- [ ] Task 3", 
               "assignees": ["llmartella"], 
               "labels": ["agvend"]
