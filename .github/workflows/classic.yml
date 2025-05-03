@@ -1,50 +1,70 @@
-name: Create Issue and Add to Classic Project
+name: Create Issue and Assign to Classic Project
 
 on:
   workflow_dispatch:
 
 jobs:
-  create_issue_and_add_to_project:
+  create_issue:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
+          sudo apt-add-repository https://cli.github.com/packages
+          sudo apt update
+          sudo apt install gh -y
 
-      - name: Set up GitHub CLI
-        uses: cli/cli-action@v2
+      - name: Authenticate GitHub CLI
+        run: echo "${{ secrets.GH_PAT }}" | gh auth login --with-token
 
-      - name: Create issue
+      - name: Get current month
+        id: get_month
+        run: echo "month=$(date +'%B')" >> $GITHUB_OUTPUT
+
+      - name: Create Issue
         id: create_issue
         run: |
-          TITLE="Monthly Report - $(date +'%B')"
-          BODY=$'- [ ] Task 1\n- [ ] Task 2\n- [ ] Task 3'
-          ISSUE_JSON=$(gh issue create \
-            --title "$TITLE" \
-            --body "$BODY" \
-            --label "automation" \
+          ISSUE_URL=$(gh issue create \
+            --title "Monthly Report - ${{ steps.get_month.outputs.month }}" \
+            --body "- [ ] Collect data\n- [ ] Validate data\n- [ ] Write report\n- [ ] Submit report" \
+            --label "monthly-report" \
             --assignee "llmartella" \
-            --repo llmartella/alletram \
-            --json number,id)
-          echo "$ISSUE_JSON"
-          echo "issue_number=$(echo $ISSUE_JSON | jq .number)" >> $GITHUB_OUTPUT
-          echo "issue_id=$(echo $ISSUE_JSON | jq -r .id)" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            --repo $alletram \
+            --json url,number --template '' | jq -r '.url')
+          echo "issue_url=$ISSUE_URL" >> $GITHUB_OUTPUT
 
-      - name: Get project and column IDs
-        id: get_project_info
+      - name: Add Issue to Classic Project (column: Ready to Start)
         run: |
-          PROJECT_ID=$(gh api repos/amfaro/REPO_NAME/projects --jq '.[] | select(.name=="kanban") | .id')
-          COLUMN_ID=$(gh api repos/amfaro/REPO_NAME/projects/$PROJECT_ID/columns --jq '.[] | select(.name=="Ready") | .id')
-          echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
-          echo "column_id=$COLUMN_ID" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_ID=$(gh issue view ${{ steps.create_issue.outputs.issue_url }} --json id | jq -r '.id')
+          PROJECT_ID=$(gh api graphql -f query='
+            query {
+              repository(owner: "llmartella", name: "'$alletram'") {
+                projects(first: 10) {
+                  nodes {
+                    id
+                    name
+                  }
+                }
+              }
+            }' | jq -r '.data.repository.projects.nodes[] | select(.name == "kanban") | .id')
 
-      - name: Add issue to project column
-        run: |
-          gh api repos/amfaro/REPO_NAME/projects/${{ steps.get_project_info.outputs.project_id }}/columns/${{ steps.get_project_info.outputs.column_id }}/cards \
-            -f content_id=${{ steps.create_issue.outputs.issue_id }} \
-            -f content_type=Issue
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COLUMN_ID=$(gh api graphql -f query='
+            query {
+              repository(owner: "llmartella", name: "'$alletram'") {
+                projects(first: 10) {
+                  nodes {
+                    columns(first: 10) {
+                      nodes {
+                        id
+                        name
+                      }
+                    }
+                  }
+                }
+              }
+            }' | jq -r '.data.repository.projects.nodes[].columns.nodes[] | select(.name == "Ready") | .id')
+
+          # Add issue to project column
+          gh api --method POST /projects/columns/$COLUMN_ID/cards \
+            -F content_id=$ISSUE_ID \
+            -F content_type=Issue
