@@ -24,7 +24,6 @@ jobs:
             const assignee = "llmartella"; // Replace with the correct GitHub username
             const issueBody = `
   ### CPF Payment 1 for ${currentMonth}
-  Process all files and create Exposure for payment 1 of ${currentMonth}
 - [ ] Task 1: Get all Template data from API
 - [ ] Task 2: Get all Unspecified reports from Share File
 - [ ] Task 3: Confirm file transaction counts
