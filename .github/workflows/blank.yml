@@ -36,6 +36,11 @@ jobs:
             `;
 
             const assignee = "llmartella"; // Replace with the GitHub username of the assignee
+            const label = "agvend"; // Replace with the desired label
+            const projectId = 3; // Replace with your project ID
+            const statusFieldId = "181829972"; // Replace with your project's status field ID
+            const statusValueId = "61e4505c"; // Replace with the desired status value ID
+
 
             await github.rest.issues.create({
               owner: context.repo.owner,
