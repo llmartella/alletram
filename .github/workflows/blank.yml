@@ -29,7 +29,7 @@ jobs:
             const { data: issue } = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `Monthly Task for ${currentMonth}`,
+              title: `CPF LM Task for ${currentMonth}`,
               body: `
               ### Tasks for ${currentMonth}
               - [ ] Task 1: Review the monthly report
