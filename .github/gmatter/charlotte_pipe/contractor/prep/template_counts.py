@@ -1,96 +1,75 @@
-# place all Template files in /Users/lorimartella/Documents/gmatter/charlotte_pipe/templates
-# be sure to remove previous payment run files
-# then run this to get the count of transactions in each file
-
-import duckdb
+import os
+import xlwings as xw
 import pandas as pd
 
-def get_column_type(con, table, column):
-    """Return the DuckDB logical type of a column"""
-    row = con.execute(f"PRAGMA table_info({table})").fetchdf()
-    dtype = row.loc[row['name'] == column, 'type']
-    return dtype.iloc[0] if not dtype.empty else None
+folder_path = r'/Users/lorimartella/Documents/gmatter/charlotte_pipe/templates'
 
+file_data = []
 
-def validate_total_counts(con):
-    # Check column type for # Transactions
-    col_type = get_column_type(con, "by_contractor", "# Transactions")
+# Create the Excel app once, keep it hidden and silent
+app = xw.App(visible=False)
+app.display_alerts = False
+app.screen_updating = False
 
-    if col_type and "VARCHAR" in col_type.upper():
-        col_expr = 'CAST("# Transactions" AS BIGINT)'
-    else:
-        col_expr = '"# Transactions"'
+for filename in os.listdir(folder_path):
+    if filename.endswith('.xlsx') and not filename.startswith('~$'):
+        file_path = os.path.join(folder_path, filename)
 
-    contractor_total = con.execute(f"""
-        SELECT SUM({col_expr}) as contractor_total
-        FROM by_contractor
-    """).fetchone()[0] or 0
+        try:
+            wb = app.books.open(file_path)
 
-    transactions_total = con.execute("""
-        SELECT COUNT(*) as transactions_total
-        FROM contractor_transactions
-    """).fetchone()[0]
+            # Find the first usable sheet (not "sample" or "instructions")
+            valid_sheets = [
+                sheet for sheet in wb.sheets
+                if not ('sample' in sheet.name.lower() or 'instructions' in sheet.name.lower())
+            ]
 
-    results = pd.DataFrame([
-        ["By Contractor", contractor_total],
-        ["Contractor Transactions", transactions_total]
-    ], columns=["Source", "Transaction Count"])
+            if not valid_sheets:
+                print(f"No valid sheet found in {filename}. Skipping...")
+                file_data.append({'Filename': filename, 'Complete Rows (>5 columns)': 0})
+                wb.close()
+                continue
 
-    results["Match?"] = "YES" if contractor_total == transactions_total else "NO"
-    results.to_csv("outputs/01_total_count_validation.csv", index=False)
-    return results
+            sheet = valid_sheets[0]
+            data = sheet.used_range.value
 
+            complete_rows = 0
 
-def validate_contractor_counts(con):
-    # Check column type for # Transactions
-    col_type = get_column_type(con, "by_contractor", "# Transactions")
+            if data and isinstance(data, list):
+                for idx, row in enumerate(data, start=1):  # start=1 for natural Excel row numbers
+                    if idx == 6:
+                        continue  # 🛑 Skip row 6 (header row)
 
-    if col_type and "VARCHAR" in col_type.upper():
-        col_expr = 'CAST("# Transactions" AS BIGINT)'
-    else:
-        col_expr = '"# Transactions"'
+                    if isinstance(row, list):
+                        non_empty_cells = sum(1 for cell in row if cell not in (None, '', ' '))
+                        if non_empty_cells >= 4:
+                            complete_rows += 1
 
-    contractor_counts = con.execute(f"""
-        SELECT Contractor, {col_expr} as contractor_count
-        FROM by_contractor
-    """).df()
+            file_data.append({
+                'Filename': filename,
+                'Complete Rows (>5 columns)': complete_rows
+            })
 
-    transaction_counts = con.execute("""
-        SELECT contractor_name as Contractor,
-               COUNT(*) as transactions_count
-        FROM contractor_transactions
-        GROUP BY contractor_name
-    """).df()
+            wb.close()
 
-    merged = pd.merge(
-        contractor_counts,
-        transaction_counts,
-        on="Contractor",
-        how="outer"
-    ).fillna(0)
+        except Exception as e:
+            print(f"Error reading {filename}: {e}")
+            file_data.append({
+                'Filename': filename,
+                'Complete Rows (>5 columns)': 'Error'})
+            try:
+                wb.close()
+            except:
+                pass  # just in case wb is not open
 
-    merged["contractor_count"] = merged["contractor_count"].astype(int)
-    merged["transactions_count"] = merged["transactions_count"].astype(int)
-    merged["Match?"] = merged["contractor_count"] == merged["transactions_count"]
-    merged["Match?"] = merged["Match?"].map({True: "YES", False: "NO"})
+# Quit the Excel app after all files are processed
+app.quit()
 
-    merged.to_csv("outputs/02_contractor_count_validation.csv", index=False)
-    return merged
+# Save the results
+df = pd.DataFrame(file_data)
+print(df)
 
+output_file = r'/Users/lorimartella/Documents/gmatter/charlotte_pipe/reports/templateCounts.xlsx'
+df.to_excel(output_file, index=False)
 
-def run_validations(db_path="mydata.duckdb"):
-    con = duckdb.connect(db_path)
-
-    print("Running total counts validation...")
-    total_results = validate_total_counts(con)
-    print(total_results)
-
-    print("\nRunning contractor counts validation...")
-    contractor_results = validate_contractor_counts(con)
-    print(contractor_results)
-
-    con.close()
-
-
-if __name__ == "__main__":
-    run_validations("/Users/lorimartella/Documents/gmatter/charlotte_pipe/charlotte_pipe.duckdb")
+print(f"\nSaved results to {output_file}")
