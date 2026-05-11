@@ -49,7 +49,7 @@ OUTPUT_SHEET_ID = "1LUKPMtd41o-0uvMXb6rk_tY1HIqcme3zkAAaMh2yF-Y"
 SEARCH_KEYWORD = "contractor_credit_unspecified"
 
 # Tab name written in the output sheet (created if it doesn't exist).
-OUTPUT_TAB_NAME = "CustomerNameMapping"
+OUTPUT_TAB_NAME = "credit_CustomerNameMapping"
 
 # ─────────────────────────────────────────────
 
