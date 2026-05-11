@@ -35,11 +35,11 @@ LOCAL_EXCEL_FOLDER = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/credi
 # Google Sheet that holds the mapping produced by get_customer_name_mapping.py.
 # (Can be the same sheet as the output sheet below.)
 INPUT_SHEET_ID  = "1LUKPMtd41o-0uvMXb6rk_tY1HIqcme3zkAAaMh2yF-Y"
-INPUT_TAB_NAME  = "CustomerNameMapping"
+INPUT_TAB_NAME  = "credit_CustomerNameMapping"
 
 # Google Sheet where extracted customer values will be written.
 OUTPUT_SHEET_ID = "1LUKPMtd41o-0uvMXb6rk_tY1HIqcme3zkAAaMh2yF-Y"
-OUTPUT_TAB_NAME = "CustomerValues"
+OUTPUT_TAB_NAME = "credit_CustomerValues"
 
 # ─────────────────────────────────────────────
 
