@@ -1,0 +1,595 @@
+/**
+ * SheetToKCL.gs
+ * Converts Google Sheet transaction data to KCL format.
+ *
+ * ============================================================
+ * SETUP INSTRUCTIONS
+ * ============================================================
+ * 1. In your Google Sheet, make sure Row 1 has these headers
+ *    (exact names, order doesn't matter):
+ *
+ *      request_id, transaction_id, invoice_date, sku_key,
+ *      uom_key, quantity, amount, transaction_type,
+ *      earnings, purchaser.id, seller.key,
+ *      offer_key, participant_key, status
+ *
+ * 2. The "status" column is managed by this script:
+ *      (blank)   = not yet exported
+ *      pending   = marked for next export
+ *      exported  = already exported
+ *      skip      = always ignore this row
+ *
+ * 3. Go to Extensions > Apps Script, paste this file, save,
+ *    then reload your Google Sheet.
+ *    A "KCL Export" menu will appear in the menu bar.
+ *
+ * ============================================================
+ * MENU OPTIONS
+ * ============================================================
+ *  Mark selected rows as Pending  — select rows, then run
+ *  Export Pending rows            — exports all "pending" rows
+ *  Export by Request ID(s)        — prompts for request_id(s)
+ *  Reset selected rows to blank   — clears status on selection
+ * ============================================================
+ */
+
+/**
+ * add your examples to this google sheet.  add any extra columns as needed.
+ * update any rows to status = pending to export them again
+ * this will generate both the KCL format and JSON format
+ * JSON is only one request with all transactions - the first request_id is used
+ * JSON includes random guid as entity.id
+
+// ── Config ───────────────────────────────────────────────────
+const SHEET_NAME = "Sheet1";          // Change to match your tab name
+// ─────────────────────────────────────────────────────────────
+
+
+/**
+ * Adds the custom "KCL Export" menu when the spreadsheet opens.
+ */
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("KCL Export")
+    .addItem("Mark selected rows as Pending", "markSelectedAsPending")
+    .addItem("Export Pending rows", "exportPending")
+    .addSeparator()
+    .addItem("Export by Request ID(s)", "exportByRequestId")
+    .addSeparator()
+    .addItem("Reset selected rows to blank", "resetSelectedStatus")
+    .addSeparator()
+    .addItem("Open Copy sidebar", "showKclSidebar")
+    .addToUi();
+}
+
+
+// ── Menu actions ─────────────────────────────────────────────
+
+/**
+ * Marks the currently selected rows as "pending".
+ * Select a range of data rows first, then run this from the menu.
+ */
+function markSelectedAsPending() {
+  const sheet = getDataSheet();
+  const statusCol = requireStatusCol(sheet);
+  if (!statusCol) return;
+
+  const { firstDataRow, numRows } = getSelectedDataRows(sheet);
+  if (numRows <= 0) return;
+
+  for (let i = 0; i < numRows; i++) {
+    sheet.getRange(firstDataRow + i, statusCol).setValue("pending");
+  }
+  SpreadsheetApp.getUi().alert(`${numRows} row(s) marked as "pending".`);
+}
+
+
+/**
+ * Resets the status of selected rows back to blank.
+ */
+function resetSelectedStatus() {
+  const sheet = getDataSheet();
+  const statusCol = requireStatusCol(sheet);
+  if (!statusCol) return;
+
+  const { firstDataRow, numRows } = getSelectedDataRows(sheet);
+  if (numRows <= 0) return;
+
+  for (let i = 0; i < numRows; i++) {
+    sheet.getRange(firstDataRow + i, statusCol).setValue("");
+  }
+  SpreadsheetApp.getUi().alert(`${numRows} row(s) reset to blank.`);
+}
+
+
+/**
+ * Exports all rows with status = "pending".
+ * After a successful export, marks those rows as "exported".
+ */
+function exportPending() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getDataSheet();
+  const allRows = getDataRows(sheet);
+  const pendingRows = allRows.filter(r =>
+    (r.status || "").toString().trim().toLowerCase() === "pending"
+  );
+
+  if (pendingRows.length === 0) {
+    SpreadsheetApp.getUi().alert(
+      'No rows marked as "pending".\nUse "Mark selected rows as Pending" first.'
+    );
+    return;
+  }
+
+  const kcl = buildKCL(pendingRows);
+  writeOutput(ss, kcl, pendingRows);
+
+  // Mark exported rows
+  const headers = getHeaders(sheet);
+  const statusColIdx = headers.indexOf("status") + 1; // 1-based
+  pendingRows.forEach(row => {
+    sheet.getRange(row.__rowIndex, statusColIdx).setValue("exported");
+  });
+
+  SpreadsheetApp.getUi().alert(`Exported ${pendingRows.length} transaction(s) across ${countRequestIds(pendingRows)} request(s). See the sidebar to copy.`);
+}
+
+
+/**
+ * Prompts for one or more request_id values (comma-separated)
+ * and exports matching rows. Does NOT change row status.
+ */
+function exportByRequestId() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.prompt(
+    "Export by Request ID",
+    "Enter one or more request_id values, separated by commas:\n" +
+    "e.g.  0000001313, 0000001314",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  const input = response.getResponseText().trim();
+  if (!input) { ui.alert("No request IDs entered."); return; }
+
+  const requestIds = input.split(",").map(s => s.trim()).filter(Boolean);
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getDataSheet();
+  const allRows = getDataRows(sheet);
+  const matchedRows = allRows.filter(r =>
+    requestIds.includes((r.request_id || "").toString().trim())
+  );
+
+  if (matchedRows.length === 0) {
+    ui.alert(`No rows found for: ${requestIds.join(", ")}`);
+    return;
+  }
+
+  const kcl = buildKCL(matchedRows);
+  writeOutput(ss, kcl, matchedRows);
+
+  ui.alert(`Exported ${matchedRows.length} transaction(s) for: ${requestIds.join(", ")}. See the sidebar to copy.`);
+}
+
+
+// ── KCL builder ──────────────────────────────────────────────
+
+/**
+ * Groups rows by request_id and builds the full KCL string.
+ */
+function buildKCL(rows) {
+  const groups = {};
+  const order = [];
+  rows.forEach(row => {
+    const rid = (row.request_id || "").toString().trim();
+    if (!groups[rid]) { groups[rid] = []; order.push(rid); }
+    groups[rid].push(row);
+  });
+  return order.map(rid => buildRequestBlock(rid, groups[rid])).join("\n");
+}
+
+
+/**
+ * Builds one KCL request block for a single request_id.
+ */
+function buildRequestBlock(requestId, rows) {
+  const participantKey = (rows[0].participant_key || "").toString().trim();
+  const transactions = rows.map(row => buildTransaction(row)).join("\n");
+  return `{
+    "request_id": "${requestId}"
+    "participant_key": "${participantKey}"
+    "transactions": [
+${transactions}
+    ]
+}`;
+}
+
+
+/**
+ * Builds one KCL transaction block from a row object.
+ */
+function buildTransaction(row) {
+  const transactionId   = (row.transaction_id   || "").toString().trim();
+  const transactionType = (row.transaction_type  || "").toString().trim();
+  const skuKey          = (row.sku_key           || "").toString().trim();
+  const uomKey          = (row.uom_key           || "").toString().trim();
+  const quantity        = parseNumber(row.quantity);
+  const amount          = parseNumber(row.amount);
+  const invoiceDate     = formatDate(row.invoice_date);
+  const sellerKey       = (row["seller.key"]    || "").toString().trim();
+  const purchaserId     = (row["purchaser.id"]  || "").toString().trim();
+  const offerKey        = (row["offer_key"]     || "").toString().trim();
+  const earnings        = parseNumber(row.earnings);
+
+  const incentives = buildIncentives(offerKey, earnings);
+
+  return `        {
+            "transaction_id": "${transactionId}"
+            "transaction_type": "${transactionType}"
+            "sku_key": "${skuKey}"
+            "uom_key": "${uomKey}"
+            "quantity": ${quantity}
+            "amount": ${amount}
+            "invoice_date": "${invoiceDate}"
+            "seller": {
+                "key": "${sellerKey}"
+            }
+            "purchaser": {
+                "id": "${purchaserId}"
+            }
+            "expected_incentives": ${incentives}
+        }`;
+}
+
+
+/**
+ * Returns the KCL expected_incentives value.
+ * Empty array when earnings = 0, otherwise a keyed object array.
+ */
+function buildIncentives(offerKey, earnings) {
+  if (!offerKey || earnings <= 0) return "[]";
+  return (
+    "[\n" +
+    "                    {\n" +
+    `                        "${offerKey}": ${earnings}\n` +
+    "                    }\n" +
+    "                ]"
+  );
+}
+
+
+// ── Sheet helpers ────────────────────────────────────────────
+
+/**
+ * Returns the data sheet, alerting if it doesn't exist.
+ */
+function getDataSheet() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert(
+      `Sheet "${SHEET_NAME}" not found.\n` +
+      `Update the SHEET_NAME constant at the top of the script.`
+    );
+  }
+  return sheet;
+}
+
+
+/**
+ * Reads all data rows, returns array of header-keyed objects.
+ * Skips blank rows and rows with status = "skip".
+ * Attaches __rowIndex (1-based sheet row) for later status writes.
+ */
+function getDataRows(sheet) {
+  const headers = getHeaders(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  const data = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  const rows = [];
+
+  data.forEach((row, i) => {
+    if (row.every(cell => cell === "" || cell === null)) return; // blank row
+
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = row[idx]; });
+    obj.__rowIndex = i + 2; // 1-based, +1 for header, +1 for 0-index offset
+
+    if ((obj.status || "").toString().trim().toLowerCase() === "skip") return;
+    rows.push(obj);
+  });
+
+  return rows;
+}
+
+
+/**
+ * Returns the header row as a trimmed string array (lowercase preserved).
+ */
+function getHeaders(sheet) {
+  const lastCol = sheet.getLastColumn();
+  return sheet.getRange(1, 1, 1, lastCol)
+    .getValues()[0]
+    .map(h => h.toString().trim());
+}
+
+
+/**
+ * Finds the 1-based column index of "status". Alerts and returns null if missing.
+ */
+function requireStatusCol(sheet) {
+  const headers = getHeaders(sheet);
+  const idx = headers.indexOf("status");
+  if (idx === -1) {
+    SpreadsheetApp.getUi().alert(
+      'Could not find a "status" column. Please add it to your header row.'
+    );
+    return null;
+  }
+  return idx + 1; // 1-based
+}
+
+
+/**
+ * Returns firstDataRow and numRows for the current selection,
+ * clamped so the header row is never included.
+ */
+function getSelectedDataRows(sheet) {
+  const range = sheet.getActiveRange();
+  const startRow = range.getRow();
+  const firstDataRow = Math.max(startRow, 2);
+  const numRows = range.getNumRows() - (firstDataRow - startRow);
+
+  if (numRows <= 0) {
+    SpreadsheetApp.getUi().alert(
+      "Please select at least one data row (not the header)."
+    );
+  }
+  return { firstDataRow, numRows };
+}
+
+
+/**
+ * Counts distinct request_ids in a set of rows.
+ */
+function countRequestIds(rows) {
+  return new Set(rows.map(r => (r.request_id || "").toString().trim())).size;
+}
+
+
+// ── Number / date helpers ────────────────────────────────────
+
+/**
+ * Parses a value as a number, stripping currency symbols and commas.
+ */
+function parseNumber(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const cleaned = value.toString().replace(/[$,]/g, "").trim();
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? 0 : num;
+}
+
+
+/**
+ * Formats a date value as YYYY-MM-DD.
+ * Handles Google Sheets Date objects and MM/DD/YYYY strings.
+ */
+function formatDate(value) {
+  if (!value) return "";
+  if (value instanceof Date) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, "0");
+    const d = String(value.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const str = value.toString().trim();
+  const parts = str.split(/[\/\-]/);
+  if (parts.length === 3) {
+    if (parts[0].length === 4) return str;                          // already YYYY-MM-DD
+    return `${parts[2]}-${parts[0].padStart(2,"0")}-${parts[1].padStart(2,"0")}`;
+  }
+  return str;
+}
+
+
+// ── Output ───────────────────────────────────────────────────
+
+/**
+ * Builds JSON from the same rows, then opens the sidebar with both KCL and JSON.
+ */
+function writeOutput(ss, kcl, rows) {
+  const jsonOutput = buildJSON(rows);
+  showSidebar(kcl, jsonOutput);
+}
+
+
+/**
+ * Builds a JSON object from the exported rows.
+ * Groups by request_id, drops expected_incentives.
+ */
+function buildJSON(rows) {
+  // Group rows by request_id preserving order
+  const groups = {};
+  const order = [];
+  rows.forEach(row => {
+    const rid = (row.request_id || "").toString().trim();
+    if (!groups[rid]) { groups[rid] = []; order.push(rid); }
+    groups[rid].push(row);
+  });
+
+  // Use the first request_id found, but include ALL transactions from all rows
+  const rid = order[0];
+  const participantKey = (rows[0].participant_key || "").toString().trim();
+
+  const transactions = rows.map(row => ({
+    transaction_id:   (row.transaction_id   || "").toString().trim(),
+    transaction_type: (row.transaction_type  || "").toString().trim(),
+    sku_key:          (row.sku_key           || "").toString().trim(),
+    uom_key:          (row.uom_key           || "").toString().trim(),
+    quantity:         parseNumber(row.quantity),
+    amount:           parseNumber(row.amount),
+    invoice_date:     formatDate(row.invoice_date),
+    properties:       [],
+    purchaser: {
+      id: (row["purchaser.id"] || "").toString().trim()
+    }
+  }));
+
+  const result = {
+    participant_key: participantKey,
+    request_id:      rid,
+    properties:      [],
+    entities: [
+      {
+        id:           generateGuid(),
+        properties:   [],
+        transactions: transactions
+      }
+    ],
+    relationships: []
+  };
+
+  return JSON.stringify(result, null, 4);
+}
+
+
+/**
+ * Generates a random RFC4122 v4 GUID.
+ */
+function generateGuid() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+
+/**
+ * Opens a sidebar with KCL and JSON outputs, each with their own Copy button.
+ * Can also be triggered manually from the menu after a previous export.
+ */
+function showKclSidebar(kcl) {
+  if (kcl === undefined) {
+    SpreadsheetApp.getUi().alert("No output found. Run an export first.");
+    return;
+  }
+  showSidebar(kcl, null);
+}
+
+
+/**
+ * Renders the sidebar with both KCL and JSON panels.
+ */
+function showSidebar(kcl, jsonStr) {
+  const kclEncoded  = JSON.stringify(kcl);
+  const jsonEncoded = JSON.stringify(jsonStr || "");
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 10px;
+    gap: 8px;
+    background: #f8f9fa;
+  }
+  .panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 4px;
+    min-height: 0;
+  }
+  h3 {
+    font-size: 12px;
+    font-weight: bold;
+    color: #333;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  textarea {
+    flex: 1;
+    width: 100%;
+    font-family: monospace;
+    font-size: 10px;
+    padding: 6px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    resize: none;
+    background: #fff;
+  }
+  button {
+    width: 100%;
+    padding: 7px;
+    background: #1a73e8;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  button:hover { background: #1558b0; }
+  .msg {
+    font-size: 11px;
+    color: #188038;
+    text-align: center;
+    min-height: 15px;
+  }
+  .divider {
+    border: none;
+    border-top: 1px solid #ddd;
+    margin: 2px 0;
+  }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <h3>KCL</h3>
+    <textarea id="kcl" readonly></textarea>
+    <button onclick="copyText('kcl','msg-kcl')">Copy KCL</button>
+    <div class="msg" id="msg-kcl"></div>
+  </div>
+  <hr class="divider">
+  <div class="panel">
+    <h3>JSON</h3>
+    <textarea id="json" readonly></textarea>
+    <button onclick="copyText('json','msg-json')">Copy JSON</button>
+    <div class="msg" id="msg-json"></div>
+  </div>
+<script>
+  document.getElementById("kcl").value  = ${kclEncoded};
+  document.getElementById("json").value = ${jsonEncoded};
+
+  function copyText(id, msgId) {
+    const ta = document.getElementById(id);
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    navigator.clipboard.writeText(ta.value).then(function() {
+      showMsg(msgId, "Copied!");
+    }).catch(function() {
+      document.execCommand("copy");
+      showMsg(msgId, "Copied!");
+    });
+  }
+
+  function showMsg(id, text) {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    setTimeout(function() { el.textContent = ""; }, 2500);
+  }
+<\/script>
+</body>
+</html>`;
+
+  const ui = HtmlService.createHtmlOutput(html)
+    .setTitle("KCL + JSON Output")
+    .setWidth(440);
+  SpreadsheetApp.getUi().showSidebar(ui);
+}
