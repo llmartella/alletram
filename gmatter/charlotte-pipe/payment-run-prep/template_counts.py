@@ -4,6 +4,8 @@ import openpyxl
 import pandas as pd
 from datetime import datetime
 
+# updated to not require opening excel and Grant Access
+
 # --- Patch openpyxl to clamp font family values instead of raising ---
 # Some xlsx files use font family=34 which exceeds openpyxl's max of 14
 from openpyxl.descriptors import Max
