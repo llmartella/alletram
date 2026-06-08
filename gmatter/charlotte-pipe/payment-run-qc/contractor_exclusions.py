@@ -41,7 +41,7 @@ def create_exclusions_report(db_path="mydata.duckdb", output_csv="03_exclusions.
                 if exclude_flag != "Y":
                     results.append([
                         row["contractor_name"],
-                        row["file_name"],
+                        row["file_name"], #fixed 06/08/2026
                         row["item_description"],
                         exclude_flag,
                         f'Found "{term}" but exclude is not "Y"'
