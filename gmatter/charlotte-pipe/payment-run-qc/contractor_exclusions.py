@@ -22,7 +22,7 @@ def create_exclusions_report(db_path="mydata.duckdb", output_csv="03_exclusions.
     # Load data from contractor_transactions
     df = con.execute("""
         SELECT contractor_name,
-               archive_file_name,
+               file_name,
                item_description,
                exclude,
                potential_earnings
@@ -41,7 +41,7 @@ def create_exclusions_report(db_path="mydata.duckdb", output_csv="03_exclusions.
                 if exclude_flag != "Y":
                     results.append([
                         row["contractor_name"],
-                        row["archive_file_name"],
+                        row["file_name"],
                         row["item_description"],
                         exclude_flag,
                         f'Found "{term}" but exclude is not "Y"'
@@ -50,7 +50,7 @@ def create_exclusions_report(db_path="mydata.duckdb", output_csv="03_exclusions.
                 if pd.notna(potential_earnings) and str(potential_earnings).strip() != "":
                     results.append([
                         row["contractor_name"],
-                        row["archive_file_name"],
+                        row["file_name"],
                         row["item_description"],
                         exclude_flag,
                         f'Found "{term}" but potential_earnings is not empty'
@@ -60,7 +60,7 @@ def create_exclusions_report(db_path="mydata.duckdb", output_csv="03_exclusions.
     if results:
         report_df = pd.DataFrame(results, columns=[
             "contractor_name",
-            "archive_file_name",
+            "file_name",
             "item_description",
             "exclude",
             "issue_type"
@@ -69,7 +69,7 @@ def create_exclusions_report(db_path="mydata.duckdb", output_csv="03_exclusions.
         # Empty report but with headers
         report_df = pd.DataFrame(columns=[
             "contractor_name",
-            "archive_file_name",
+            "file_name",
             "item_description",
             "exclude",
             "issue_type"

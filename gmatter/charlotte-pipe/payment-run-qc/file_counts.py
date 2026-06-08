@@ -6,11 +6,11 @@ import sys
 def compare_file_names_with_counts(db_path, table_name, output_csv):
     con = duckdb.connect(db_path)
 
-    # Query DB: get archive_file_name and row counts
+    # Query DB: get file_name and row counts
     query = f"""
-        SELECT archive_file_name, COUNT(*) AS row_count
+        SELECT file_name, COUNT(*) AS row_count
         FROM {table_name}
-        GROUP BY archive_file_name
+        GROUP BY file_name
     """
     db_counts = {row[0].strip(): row[1] for row in con.execute(query).fetchall() if row[0]}
     archive_set = set(db_counts.keys())
