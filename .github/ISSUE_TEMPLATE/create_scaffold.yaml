@@ -32,7 +32,6 @@ body:
     id: program-supplier
     attributes:
       label: Program Supplier
-      description: Select the program supplier
       options:
         - "-- select one --"
         - bayer
