@@ -9,8 +9,8 @@ body:
       label: Change Type
       description: Select the type of change being requested
       options:
-        - Select an option
-        - Add new SKUs
+        - "-- Select an Option --"
+        - New SKUs
         - Supersede SKUs
         - Add Prices
     validations:
@@ -31,7 +31,7 @@ body:
       label: Program Supplier
       description: Select the supplier associated with this change
       options:
-        - Select an option
+        - "-- Select an Option --"
         - Bayer
         - Corteva
         - FMC
