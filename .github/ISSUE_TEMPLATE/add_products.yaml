@@ -4,6 +4,18 @@ title: "[Global-Catalog: Add Products]: "
 labels: ["add-products"]
 body:
   - type: dropdown
+    id: reason
+    attributes:
+      label: Reason
+      description: Select the reason for this request
+      options:
+        - "-- select one --"
+        - New SKUs Received
+        - New Pack Sizes Received
+    validations:
+      required: true
+  
+  - type: dropdown
     id: base
     attributes:
       label: Base
@@ -41,17 +53,6 @@ body:
     validations:
       required: true
 
-  - type: dropdown
-    id: reason
-    attributes:
-      label: Reason
-      description: Select the reason for this request
-      options:
-        - "-- select one --"
-        - New SKUs Received
-        - New Pack Sizes Received
-    validations:
-      required: true
 
   - type: textarea
     id: other-details
