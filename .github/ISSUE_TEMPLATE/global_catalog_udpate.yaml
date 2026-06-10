@@ -1,0 +1,38 @@
+name: Global Catalog Update
+description: Submit a request to update the global catalog
+title: "[Catalog Update]: "
+labels: ["catalog-update"]
+body:
+  - type: dropdown
+    id: change-type
+    attributes:
+      label: Change Type
+      description: Select the type of change being requested
+      options:
+        - New SKUs
+        - Supersede SKUs
+        - Add Prices
+    validations:
+      required: true
+
+  - type: textarea
+    id: reason-for-change
+    attributes:
+      label: Reason for Change
+      description: Provide a detailed reason for this catalog update
+      placeholder: Explain why this change is needed...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: program-supplier
+    attributes:
+      label: Program Supplier
+      description: Select the supplier associated with this change
+      options:
+        - Bayer
+        - Corteva
+        - FMC
+        - Other
+    validations:
+      required: true
