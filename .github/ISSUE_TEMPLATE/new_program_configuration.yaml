@@ -21,11 +21,14 @@ body:
     validations:
       required: true
 
-  - type: input
+  - type: dropdown
     id: time-frame
     attributes:
       label: Time Frame
-      placeholder: Enter the time frame...
+      description: Enter the time frame...
+      options:
+       - 2025-2026 (2026)
+       - 2026-2027 (2027)
     validations:
       required: false
 
@@ -34,6 +37,14 @@ body:
     attributes:
       label: Program Name
       placeholder: Enter the program name...
+    validations:
+      required: true
+
+  - type: input
+    id: program-sheet
+    attributes:
+      label: Program Sheet
+      placeholder: Provide link to program sheet...
     validations:
       required: true
 
