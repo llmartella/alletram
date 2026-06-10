@@ -1,0 +1,74 @@
+name: Program Status
+description: Submit a request to suspend or release a program
+title: "[Program Status]: "
+labels: ["program-status"]
+body:
+  - type: dropdown
+    id: reason
+    attributes:
+      label: Reason
+      description: Select the reason for this request
+      options:
+        - "-- select one --"
+        - Suspend Program
+        - Release Program
+    validations:
+      required: true
+
+  - type: dropdown
+    id: time-frame
+    attributes:
+      label: Time Frame
+      description: Select the time frame
+      options:
+        - "-- select one --"
+        - 2025-2026 (2026)
+        - 2026-2027 (2027)
+    validations:
+      required: true
+
+  - type: input
+    id: program-name
+    attributes:
+      label: Program Name
+      placeholder: Enter the program name...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: program-supplier
+    attributes:
+      label: Program Supplier
+      description: Select the program supplier
+      options:
+        - "-- select one --"
+        - bayer
+        - corteva
+        - syngenta
+        - winfield
+        - rosens
+        - chs
+        - amvac
+        - basf
+        - fmc
+        - upl
+        - valent
+        - helena
+        - gowan
+        - albaugh
+        - atticus
+        - van_diest
+        - cni
+        - nutrien
+        - simplot
+        - iap
+    validations:
+      required: true
+
+  - type: textarea
+    id: other-details
+    attributes:
+      label: Other Details
+      placeholder: Enter any additional details...
+    validations:
+      required: true
