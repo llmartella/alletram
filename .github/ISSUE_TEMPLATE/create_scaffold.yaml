@@ -1,0 +1,67 @@
+name: Create Scaffold
+description: Submit a request to create a new scaffold
+title: "[Create Scaffold]: "
+labels: ["create-scaffold"]
+body:
+  - type: dropdown
+    id: reason
+    attributes:
+      label: Reason
+      description: Select the reason for this request
+      options:
+        - "-- select one --"
+        - New Program Supplier
+        - New time_frame
+        - New Supplier and time_frame
+    validations:
+      required: true
+
+  - type: dropdown
+    id: time-frame
+    attributes:
+      label: Time Frame
+      description: Select the time frame
+      options:
+        - "-- select one --"
+        - 2025-2026 (2026)
+        - 2026-2027 (2027)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: program-supplier
+    attributes:
+      label: Program Supplier
+      description: Select the program supplier
+      options:
+        - "-- select one --"
+        - bayer
+        - corteva
+        - syngenta
+        - winfield
+        - rosens
+        - chs
+        - amvac
+        - basf
+        - fmc
+        - upl
+        - valent
+        - helena
+        - gowan
+        - albaugh
+        - atticus
+        - van_diest
+        - cni
+        - nutrien
+        - simplot
+        - iap
+    validations:
+      required: true
+
+  - type: textarea
+    id: other-details
+    attributes:
+      label: Other Details
+      placeholder: Enter any additional details...
+    validations:
+      required: false
