@@ -1,4 +1,4 @@
-name: Program Status
+name: Operational Status Change
 description: Submit a request to suspend or release a program
 title: "[Program Status]: "
 labels: ["program-status"]
