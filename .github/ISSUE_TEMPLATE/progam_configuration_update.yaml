@@ -1,0 +1,85 @@
+name: Update Program Configuration
+description: Submit a request to update an existing program configuration
+title: "[Update Program Configuration]: "
+labels: ["update-program-configuration"]
+body:
+  - type: input
+    id: participant-key
+    attributes:
+      label: Participant Key
+      placeholder: Enter the participant key...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reason
+    attributes:
+      label: Reason
+      description: Select the reason for this update
+      options:
+        - "-- select one --"
+        - Change to SKUs
+        - Change to Rates
+        - Change to Dates
+        - Other (please describe)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: time-frame
+    attributes:
+      label: Time Frame
+      description: Select the time frame
+      options:
+        - "-- select one --"
+        - 2025-2026 (2026)
+        - 2026-2027 (2027)
+    validations:
+      required: true
+
+  - type: textarea
+    id: program-name
+    attributes:
+      label: Program Name
+      placeholder: Enter the program name...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: program-supplier
+    attributes:
+      label: Program Supplier
+      description: Select the program supplier
+      options:
+        - "-- select one --"
+        - bayer
+        - corteva
+        - syngenta
+        - winfield
+        - rosens
+        - chs
+        - amvac
+        - basf
+        - fmc
+        - upl
+        - valent
+        - helena
+        - gowan
+        - albaugh
+        - atticus
+        - van_diest
+        - cni
+        - nutrien
+        - simplot
+        - iap
+    validations:
+      required: true
+
+  - type: textarea
+    id: other-details
+    attributes:
+      label: Other Details
+      description: If you selected "Other" above, please describe the reason here. Otherwise provide any additional details.
+      placeholder: Enter any additional details...
+    validations:
+      required: false
