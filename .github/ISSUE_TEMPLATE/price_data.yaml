@@ -1,0 +1,65 @@
+name: Add / Change Price Data
+description: Submit a request to add or change price data
+title: "[Add / Change Price Data]: "
+labels: ["add-change-price-data"]
+body:
+  
+  - type: dropdown
+    id: reason
+    attributes:
+      label: Reason
+      description: Select the reason for this request
+      options:
+        - "-- select one --"
+        - Participant Prices Received
+        - Program Supplier Prices Received
+        - Distributor Prices Received
+        - Gmatter Prices Added
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: base
+    attributes:
+      label: Base
+      description: Select the base
+      options:
+        - "-- select one --"
+        - bayer
+        - corteva
+        - syngenta
+        - winfield
+        - rosens
+        - chs
+        - amvac
+        - basf
+        - fmc
+        - upl
+        - valent
+        - helena
+        - gowan
+        - albaugh
+        - atticus
+        - van_diest
+        - cni
+        - nutrien
+        - simplot
+        - iap
+    validations:
+      required: true
+
+  - type: textarea
+    id: sku-information
+    attributes:
+      label: SKU Information
+      placeholder: Enter SKU information...
+    validations:
+      required: true
+
+  - type: textarea
+    id: other-details
+    attributes:
+      label: Other Details
+      placeholder: Enter any additional details...
+    validations:
+      required: false
