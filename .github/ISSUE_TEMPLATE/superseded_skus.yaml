@@ -1,0 +1,66 @@
+name: Supersede SKUs
+description: Submit a request to supersede SKUs
+title: "[Supersede SKUs]: "
+labels: ["supersede-skus"]
+body:
+  
+  - type: dropdown
+    id: reason
+    attributes:
+      label: Reason
+      description: Select the reason for this request
+      options:
+        - "-- select one --"
+        - Received Mfg SKU
+        - Change to UOM
+        - Incorrect Data Entered
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: base
+    attributes:
+      label: Base
+      description: Select the base
+      options:
+        - "-- select one --"
+        - bayer
+        - corteva
+        - syngenta
+        - winfield
+        - rosens
+        - chs
+        - amvac
+        - basf
+        - fmc
+        - upl
+        - valent
+        - helena
+        - gowan
+        - albaugh
+        - atticus
+        - van_diest
+        - cni
+        - nutrien
+        - simplot
+        - iap
+    validations:
+      required: true
+
+  - type: textarea
+    id: sku-information
+    attributes:
+      label: SKU Information
+      placeholder: Enter SKU information...
+    validations:
+      required: true
+
+
+  - type: textarea
+    id: other-details
+    attributes:
+      label: Other Details
+      description: If you selected "Incorrect Data Entered" above, please provide details here.
+      placeholder: Enter any additional details...
+    validations:
+      required: false
