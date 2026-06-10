@@ -3,14 +3,7 @@ description: Submit a request for participant enrollment or unenrollment
 title: "[Participant Enrollment]: "
 labels: ["participant-enrollment"]
 body:
-  - type: input
-    id: participant-key
-    attributes:
-      label: Participant Key
-      placeholder: Enter the participant key...
-    validations:
-      required: true
-
+  
   - type: dropdown
     id: reason
     attributes:
@@ -20,6 +13,14 @@ body:
         - "-- select one --"
         - New Participant Enrollment
         - Unenroll Participant
+    validations:
+      required: true
+      
+  - type: input
+    id: participant-key
+    attributes:
+      label: Participant Key
+      placeholder: Enter the participant key...
     validations:
       required: true
 
