@@ -23,7 +23,6 @@ body:
     id: reason
     attributes:
       label: Reason
-      description: Select the reason for this request
       options:
         - New Customer Request
     validations:
@@ -60,7 +59,6 @@ body:
     id: program-supplier
     attributes:
       label: Program Supplier
-      description: Select the program supplier
       options:
         - "-- select one --"
         - bayer
