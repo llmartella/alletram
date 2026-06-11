@@ -1,6 +1,6 @@
-name: Blank Issue
+name: CALC Kanban Issue
 description: Create a blank issue
-title: 'CALC:'
+title: 'CALC: '
 projects: ["llmartella/3"]
 body:
   - type: textarea
