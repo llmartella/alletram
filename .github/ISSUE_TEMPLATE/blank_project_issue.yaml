@@ -1,6 +1,6 @@
 name: Blank Issue
 description: Create a blank issue
-title: ''
+title: 'CALC:'
 projects: ["llmartella/3"]
 body:
   - type: textarea
