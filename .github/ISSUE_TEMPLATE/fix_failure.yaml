@@ -2,6 +2,7 @@ name: Fix Failure
 description: Submit a request to fix a failure
 title: "[Fix Failure]: "
 labels: ["fix-failure"]
+projects: ["llmartella/3"] # Replace with your organization/user name and project number
 body:
   - type: dropdown
     id: reason
