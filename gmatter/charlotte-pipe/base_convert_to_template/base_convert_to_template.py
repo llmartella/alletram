@@ -7,16 +7,46 @@ from typing import Dict, List, Optional, Tuple
 import openpyxl
 from openpyxl.styles import Font, Alignment
 
+import csv
+import json
+import tempfile
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import openpyxl
+from openpyxl.styles import Font, Alignment
+from openpyxl.styles.fonts import Font as _Font
+
+# ── Monkey-patch: silently ignore invalid font family values (e.g. 34) ──
+# Some vendor Excel files store out-of-range font family integers that cause
+# openpyxl to raise ValueError on load. This wraps the validator to swallow
+# those errors at import time.
+try:
+    from openpyxl.descriptors.base import Min
+
+    def _patched_min_set(self, instance, value):
+        try:
+            if hasattr(self, 'allow_none') and self.allow_none and value is None:
+                pass
+            else:
+                value = self.expected_type(value)
+        except (ValueError, TypeError):
+            pass
+        instance.__dict__[self.name] = value
+
+    Min.__set__ = _patched_min_set
+except Exception:
+    pass
 
 # ============================================================
 # PATHS / CONSTANTS
 # ============================================================
 
-BASE_DIR = Path.home() / "SAP_Folder_Automation"
+BASE_DIR = Path("/Users/lorimartella/Documents/gmatter/charlotte_pipe/template_scripts")
 INPUT_DIR = BASE_DIR / "Input"
 OUTPUT_DIR = BASE_DIR / "Output"
-OVERRIDES_PATH = BASE_DIR / "contractor_overrides.csv"
-SAVED_MAPPINGS_PATH = BASE_DIR / "saved_column_mappings.json"
+OVERRIDES_PATH = BASE_DIR / "Config/ContractorOverrides.csv"
+SAVED_MAPPINGS_PATH = BASE_DIR / "Config/saved_column_mappings.json"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -40,10 +70,10 @@ OUTPUT_HEADERS = [
 
 # Fields the user MUST map if not auto-detected
 REQUIRED_FIELDS = [
-    "order_date",
-    "item_sku",
+#    "order_date",
+#    "item_sku",
     "item_description",
-    "ship_quantity",
+#    "ship_quantity",
     "extended_price",
 ]
 

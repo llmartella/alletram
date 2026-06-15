@@ -1,7 +1,7 @@
 """
 SAP Sales Data Processor — Local Web UI
-Run with:  python app.py
-Then open: http://localhost:5000
+Run with:  python base_convert_to_template_interface.py
+Then open: http://127.0.0.1:8080
 """
 
 import json
@@ -11,8 +11,9 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template_string, request
 
-from processor import (
+from base_convert_to_template import (
     FIELD_LABELS,
+    INPUT_DIR,
     OUTPUT_HEADERS,
     REQUIRED_FIELDS,
     _normalise_header,
@@ -354,6 +355,18 @@ function toast(msg, isError = false) {
   setTimeout(() => el.className = "", 3000);
 }
 
+function toggleMapping(filename) {
+  const panel = document.getElementById(`review-${filename}`);
+  const btn = panel.previousElementSibling.previousElementSibling;
+  if (!panel) return;
+  const isOpen = panel.style.display !== "none";
+  panel.style.display = isOpen ? "none" : "block";
+  // Find the button and update its label
+  const card = document.getElementById("card-" + CSS.escape(filename));
+  const reviewBtn = card.querySelector(".btn-ghost");
+  if (reviewBtn) reviewBtn.textContent = isOpen ? "Review Mapping" : "Hide Mapping";
+}
+
 // ── Scan ──────────────────────────────────────────────────
 async function scanFiles() {
   document.getElementById("loading").style.display = "block";
@@ -400,7 +413,6 @@ function renderAll() {
 }
 
 function updateSummary() {
-  const ready   = files.filter(f => f.status === "ready").length;
   const pending = files.filter(f => f.status === "needs_mapping").length;
   const done    = files.filter(f => f.status === "done").length;
   const total   = files.length;
@@ -437,89 +449,95 @@ function buildCard(f) {
   const rowCount = f.row_count != null
     ? `<span class="row-count">${f.row_count} rows</span>` : "";
 
+  // Files that are done or ready can be expanded to review/edit mapping
+  const canExpand = f.status === "done" || f.status === "ready";
+  const expandBtn = canExpand
+    ? `<button class="btn-ghost" style="font-size:12px;padding:4px 10px;"
+         onclick="toggleMapping('${f.filename}')">Review Mapping</button>`
+    : "";
+
   card.innerHTML = `
     <div class="file-card-header">
       <span class="file-name" title="${f.filename}">${f.filename}</span>
       ${rowCount}
+      ${expandBtn}
       <span class="badge ${badgeClass}">${badgeText}</span>
     </div>
     ${f.status === "needs_mapping" ? buildMappingPanel(f) : ""}
     ${f.status === "error" ? `<div class="mapping-panel"><p style="color:var(--danger)">${f.error || "Unknown error"}</p></div>` : ""}
+    <div id="review-${f.filename}" style="display:none">${buildMappingPanel(f, true)}</div>
   `;
   return card;
 }
 
 // ── Build mapping panel ───────────────────────────────────
-function buildMappingPanel(f) {
+function buildMappingPanel(f, isReview = false) {
   const allFields = {{ field_labels | tojson }};
   const required  = {{ required_fields | tojson }};
   const headers   = f.headers;
 
-  const options = headers.map((h, i) =>
-    h ? `<option value="${i}">${h}</option>` : ""
-  ).filter(Boolean).join("");
-
   const blankOption = `<option value="">— not in this file —</option>`;
+  const selectOne   = `<option value="" disabled selected>— Select One —</option>`;
 
   const rows = Object.entries(allFields).map(([field, label]) => {
     const isReq = required.includes(field);
     const star = isReq ? `<span class="required-star">*</span>` : "";
     const needsMapping = f.missing_fields.includes(field);
-
-    // Pre-select if already in col_map
     const existingIdx = f.col_map[field] != null ? f.col_map[field] : "";
 
     return `
       <span class="field-label">${label}${star}</span>
-      <select id="sel-${f.filename}-${field}" data-field="${field}"
+      <select id="sel-${isReview ? 'review-' : ''}${f.filename}-${field}" data-field="${field}"
               style="${needsMapping ? 'border-color:var(--warn)' : ''}">
-        ${isReq ? "" : blankOption}
+        ${isReq && !isReview ? selectOne : blankOption}
         ${headers.map((h, i) =>
           h ? `<option value="${i}" ${existingIdx === i ? "selected" : ""}>${h}</option>` : ""
         ).filter(Boolean).join("")}
       </select>`;
   }).join("");
 
+  const buttonId = isReview ? `review-${f.filename}` : f.filename;
+  const buttonLabel = isReview ? "Update Mapping &amp; Reprocess" : "Apply &amp; Process";
+
   return `
     <div class="mapping-panel">
-      <h3>Column Mapping Required</h3>
-      <p>
-        These columns couldn't be matched automatically.
-        Fields marked <span style="color:var(--danger)">*</span> are required.
-      </p>
+      <h3>${isReview ? "Review / Edit Column Mapping" : "Column Mapping Required"}</h3>
+      <p>${isReview
+        ? "Mapping applied to this file. You can adjust any field and reprocess."
+        : "These columns could not be matched automatically. Fields marked <span style='color:var(--danger)'>*</span> are required."
+      }</p>
       <div class="field-grid">${rows}</div>
       <div class="save-prompt">
         <label>
-          <input type="checkbox" id="save-${f.filename}" checked>
+          <input type="checkbox" id="save-${isReview ? 'review-' : ''}${f.filename}" checked>
           Remember this mapping for files with the same column layout
         </label>
       </div>
       <div class="mapping-actions">
-        <button class="btn-success" onclick="applyMapping('${f.filename}')">
-          Apply &amp; Process
+        <button class="btn-success" onclick="applyMapping('${f.filename}', ${isReview})">
+          ${buttonLabel}
         </button>
       </div>
     </div>`;
 }
 
 // ── Apply manual mapping ──────────────────────────────────
-async function applyMapping(filename) {
+async function applyMapping(filename, isReview = false) {
   const f = files.find(x => x.filename === filename);
   if (!f) return;
 
   const allFields = {{ field_labels | tojson }};
   const required  = {{ required_fields | tojson }};
+  const prefix = isReview ? `review-` : ``;
 
-  // Collect selections
   const userMap = {};
   for (const field of Object.keys(allFields)) {
-    const sel = document.getElementById(`sel-${filename}-${field}`);
+    const sel = document.getElementById(`sel-${prefix}${filename}-${field}`);
     if (sel && sel.value !== "") {
       userMap[field] = parseInt(sel.value, 10);
     }
   }
 
-  // Validate required
   const missing = required.filter(r => userMap[r] == null);
   if (missing.length) {
     const labels = missing.map(m => allFields[m]).join(", ");
@@ -527,9 +545,8 @@ async function applyMapping(filename) {
     return;
   }
 
-  const saveIt = document.getElementById(`save-${filename}`).checked;
+  const saveIt = document.getElementById(`save-${prefix}${filename}`).checked;
 
-  // Collect header strings for the save payload
   const headerMap = {};
   for (const [field, idx] of Object.entries(userMap)) {
     headerMap[field] = f.headers[idx];
@@ -552,9 +569,9 @@ async function applyMapping(filename) {
       return;
     }
 
-    // Update local state
     f.status = "done";
     f.row_count = result.row_count;
+    f.col_map = userMap;
     f.from_saved_mapping = false;
 
     rerenderCard(f);
@@ -616,7 +633,6 @@ function rerenderCard(f) {
 
 @app.route("/")
 def index():
-    from processor import FIELD_LABELS, REQUIRED_FIELDS
     return render_template_string(
         HTML,
         field_labels=FIELD_LABELS,
@@ -626,27 +642,24 @@ def index():
 
 @app.route("/api/scan")
 def api_scan():
-    from processor import INPUT_DIR
     results = scan_input_files()
 
-    # Strip the raw rows from the JSON response (too large),
-    # but keep them in _scan_results for processing later.
     global _scan_results
     _scan_results = results
 
     slim = []
     for r in results:
         slim.append({
-            "filename":          r["filename"],
-            "status":            r["status"],
-            "headers":           r["headers"],
-            "col_map":           {k: v for k, v in r.get("col_map", {}).items()
-                                  if not k.startswith("_")},
-            "missing_fields":    r.get("missing_fields", []),
-            "error":             r.get("error", ""),
+            "filename":           r["filename"],
+            "status":             r["status"],
+            "headers":            r["headers"],
+            "col_map":            {k: v for k, v in r.get("col_map", {}).items()
+                                   if not k.startswith("_")},
+            "missing_fields":     r.get("missing_fields", []),
+            "error":              r.get("error", ""),
             "from_saved_mapping": r.get("from_saved_mapping", False),
-            "headers_signature": r.get("headers_signature", ""),
-            "row_count":         None,
+            "headers_signature":  r.get("headers_signature", ""),
+            "row_count":          None,
         })
 
     return jsonify({"files": slim, "input_dir": str(INPUT_DIR)})
@@ -655,22 +668,19 @@ def api_scan():
 @app.route("/api/process", methods=["POST"])
 def api_process():
     data = request.get_json()
-    filename = data.get("filename")
+    filename     = data.get("filename")
     user_col_map = data.get("col_map", {})
     header_map   = data.get("header_map", {})
     do_save      = data.get("save_mapping", False)
     sig          = data.get("headers_signature", "")
 
-    # Find the cached file info (which has the full rows)
     file_info = next((r for r in _scan_results if r["filename"] == filename), None)
     if not file_info:
         return jsonify({"error": f"File not found in scan results: {filename}"})
 
-    # Merge user col_map into file_info, preserving _header_row_index
     merged = dict(file_info.get("col_map") or {})
     for k, v in user_col_map.items():
         merged[k] = int(v)
-
     file_info["col_map"] = merged
 
     try:
@@ -678,7 +688,6 @@ def api_process():
     except Exception as e:
         return jsonify({"error": str(e)})
 
-    # Save mapping if requested
     if do_save and sig and header_map:
         save_mapping(sig, header_map)
 
