@@ -36,88 +36,147 @@ class ExcelStructureAnalyzer:
     def __init__(self):
         self.supported_extensions = {'.xlsx', '.xls', '.xlsm', '.xlsb'}
 
-    # Exact match search (skip single-letter headers)
+    # Case-insensitive exact match search (skip single-letter headers).
+    # Both search_terms and headers are normalized to lowercase before comparison,
+    # so there is no need to list multiple casings of the same term.
     def exact_search(self, headers: List[str], search_terms: List[str]) -> str:
-        search_terms_lower = [term.lower().strip() for term in search_terms]
-        header_map = {header.strip().lower(): header.strip() for header in headers if isinstance(header, str) and len(header.strip()) > 1}
-        matches = [header_map[term] for term in search_terms_lower if term in header_map]
-        if matches:
-            return matches[0]
+        # Deduplicate search terms after lowercasing so callers don't need to worry about it
+        seen = set()
+        unique_terms = []
+        for term in search_terms:
+            key = term.lower().strip()
+            if key not in seen:
+                seen.add(key)
+                unique_terms.append(key)
+
+        header_map = {
+            header.strip().lower(): header.strip()
+            for header in headers
+            if isinstance(header, str) and len(header.strip()) > 1
+        }
+
+        for term in unique_terms:
+            if term in header_map:
+                return header_map[term]
         return None
 
-    # Map headers to standard fields
+    # Map headers to standard fields.
+    # Search term lists use only one representative casing per term;
+    # exact_search handles the lowercasing automatically.
     def get_field_mappings(self, headers: List[str]) -> Dict[str, str]:
         def quote(val):
             return f'"{val}"' if val else 'NULL'
 
         return {
-            'vendor': quote(self.exact_search(headers, ["gmatter_vendor","PRIMVDR.NAME","Vendor","Master Vendor ID - Name","Product Vendor....","PRIMVDR.NAME",
-                "Vendor Name","MFR","MFG","Mfg","MFG 1","MFG Name","VENDOR_NAME","False","Vendor_name",
-                "Master Vendor Name","Manufacturer"])),
-            'customer_name': quote(self.exact_search(headers, ["gmatter_customer","Customer Name............","Contractor","False","Name","CUST_NAME","MAIN_CUST_NAME",
-                "Name (Bill To Customer)","CustName","Cust Name","NAME","Customer Name.............",
-                "contractor_Name","contractor_name","Master Name (Customer)","CustomerName","Main Customer Name","BU NAME",
-                "Customer Name (Bill-to Customer)","MAIN_CUSTOMER_ACCOUNT",
-                "CUSTOMER-NAME","CUSTOMER","Master Customer ID - Name","Name (Bill To)",
-                "Name (Ship To)",  "Customer ID - Name","Vendor Name",
-                "Customer","Contractor Name","Customer Name","Main Customer ID - Name",
-                "MAIN_CUST_NAME","Contractor_Name","Name (Ship-to Customer)","Bill To","ARSC Name"])),
-            'sales_order_number': quote(self.exact_search(headers, ["INV.NO","Order No","sales_order_number","Sales_order_number","False",
-                "Invoice No.","ORDER#","Sales order number","INVOICE NO","Hajoca Order ID","Customer PO",
-                "Invoice Number","INVOICE NUMBER","Sales Order","TRANS_ID::text","Order Number","Customer PO#",
-                "Invoice….."    ,"......... Invoice","Invoice","Invoice#......",
-                "Invoice#","Invoice#.","Invoice #","Invoice No","CUSTPO","Sales ORDER#",
-                "Invoice#......","INVOICE #","Order #","INV.NUM","Purchase Order","PO Number",
-                "INVOICE","Transaction ID","INVOICE ID","Transaction #","TRANS_ID","Customer PO ID",
-                "Cust PO","Sales order number"])),
-            'ordered_on': quote(self.exact_search(headers, ["gmatter_ordered_on","SHIP DATE","Invoice Date","INV-DATE","InvDate","Process Date","PROCESS_DATE","Date",
-                "Ship/Rec. Date","SHIPDATE","order_date","ShipDate….","Shipped Date","Invoice_Date","INVOICE DATE",
-                "Inv Date","INV.DATE","TRANS_DATE","DATE.ORD","INV DATE","Order_date","InvoiceDate","Order date",
-                "DATE","Ship Date","Order Date","Transaction Date","Order DATE","ShipDate",
-                "PROCESS.DATE"])),
-            'item_sku': quote(self.exact_search(headers, ["PRODUCT_ID","PRODUCT ID","Product ID","CatalogNumber (Product)","VEND.CODE",
-                "Vendor Part #","item_sku","item sku","Part Number",
-                "Prod No..","Code (Product)","Product #","Item #","Item ID","Product Code",
-                "Buy Line"])),
-            'item_sku_alt': quote(self.exact_search(headers, ["Buy Line (Product)","Cat #.........................","CatalogNumber (Product)",
-                "Product Number","ALT_CODE","ALT.1.SP","Alt Code",
-                "item_sku","VDR Catalog # (Product)","Code","Prod No..",
-                "Product Code","Alt.1"])),
-            'item_sku_category': quote(self.exact_search(headers, ["Line Position","Buy Line (Product)","LINE","Line","Cat #.........................","False",
-                "Code (Buy Line)","Code (Product Category)","item_sku_category",
-                "Product Price Group Code","Name (Price Line)","FAST.CODE","PRICELINEID","BUY.LINE","Group","Group Description",
-                "item sku category","Category","Name (Buy Line)","Linebuy Description","LinebuyDescription","Product Alt Code (Product)",
-                "GPH Level 4","Name (Product Category)","Buy Line","Priceline","Code (Price Line)",
-                "Linebuy#","FCUSCODE","Item Number","Linebuy"])),
-            'unit_price': quote(self.exact_search(headers, ["price per","Price Each","Unit Price....","Sales per Qty","Net Price EA","Unit price",
-                "Product Net Price","unit price","unit_price","Pipe Per foot","per piece or per foot","Net Each","Cost Per",
-                "Unit pricing","Price Per Foot","Unit…...","Unit","Value/Item","unit_price","Unit Value",
-                "Unit….","Price per","Unit Amount","UNIT PRICE","NET.PRICE","Unit Price2","Unit_Cost"
-                "Item Price","Net","Price","PRICE/EA","unit","Sales/Item","Unite Price","C10",
-                "Sum of Net Price","Per unit price","Price per Unit","Net Price","Unit Pricing","Cost/Item","Unit Sales",
-                "Unit Price","COST","UnitPrice","price".lower()])),
-            'ship_quantity': quote(self.exact_search(headers, ["gmatter_shipped_qty","Quantity","Shipped Qty","Qty…...","QTY","Ship Quantity","Count","Qty. in ft",
-                "QTY SOLD","Qty Sold","ship_quantity::int","Product Quantity Shipped","ShippedQty"," Qty Shipp","Qty Shipped","QTY in Feet",
-                "Sum of Quantity Shipped","SALE.QTY","Sum of Ship Quantity","Shipped Ext","Line Quantity","SHIP.QTY","Qty Shipp",
-                "Qty","Qty.","QUANTITY SHIPPED","Shipped","ship_quantity","Qty. in Feet","SHIPPED","Ship Qty",
-                "ship quantity","qtyship","External Ship Quantity","QtyShp","QTY Shipped","Quantity Invoiced"])),
-            'uom': quote(self.exact_search(headers, ["UofM","Shipped Ext","UOM Per","um","UM","Unit of Measure","UOM","Pricing Unit"])),
-            'extended_price': quote(self.exact_search(headers, ["Unit Price Extended","Extended Price","Ext. Sales","extended_price","EXT",
-                "EXTENDED PRICE","NET_PROD_AMT_CALC","Total Price","EXT-AMT","extended_price","Ext",
-                "Sales…...","Sum of Net Product Amount","Sales  $","Ext. Amount","ExtPrice","Ext Amount......","Value",
-                "Sum of Sales","AMOUNT","Net Billings","DOLLARS","TOTALNET","Extension","Total Sales","Sum of LINETOTAL",
-                "Sale Price","Cost","Ext. Price","Amount......","Ext. Amt."," Ext Amount","Ext Cost","extended price",
-                "Ext Amount....","Ext Amount","Net Product Amount","Sales Dollars","TOTALS","EXT SALES AMT","Extended Amount",
-                "EXT Net Product Amount","Ext Price","Totals","Invoice Line Extension","Sales","EXT COST","Total_Cost",
-                "EXT PRICE","Net Prod Amount Calc","Ext. Amount......","EXTAMT","Sales$","Total"])),
-            'product_description': quote(self.exact_search(headers, ["gmatter_item_description","PRODUCT_DESC","PRODUCT DESCRIPTION LINE 1",   "PRODUCT DESCRIPTION","Product Description................",
-                "Alt Code - Product Description","DESC","ProductDescription","product_description",". Product........................","Description................","Item Desc",
-                "Full Description","Product_Description","Product Description","Product","Product.","Name (Product)","item description",
-                "Product Description (Product)","o   Product","Item Description","PRODDESC","Description Line 1","PRODUCT DESC",
-                "DESCRIPTION","Product description","Product...............","Description Line 1","Description (Product)",
-                "item_description","Description","Product........................","Product",
-                "ITEM DESCRIPTION","Item Decription","Part Description","ProdDesc"])),
-            'item_upc': quote(self.exact_search(headers, ["UPC (Product)","UPC","item_upc","item upc","UPC Number"]))
+            'vendor': quote(self.exact_search(headers, [
+                "gmatter_vendor", "primvdr.name", "vendor", "master vendor id - name",
+                "product vendor....", "vendor name", "mfr", "mfg", "mfg 1", "mfg name",
+                "vendor_name", "false", "master vendor name", "manufacturer",
+            ])),
+            'customer_name': quote(self.exact_search(headers, [
+                "gmatter_customer", "customer name............", "contractor", "false", "name",
+                "cust_name", "main_cust_name", "name (bill to customer)", "custname", "cust name",
+                "customer name.............", "contractor_name", "master name (customer)",
+                "customername", "main customer name", "bu name",
+                "customer name (bill-to customer)", "main_customer_account",
+                "customer-name", "customer", "master customer id - name", "name (bill to)",
+                "name (ship to)", "customer id - name", "vendor name",
+                "contractor name", "customer name", "main customer id - name",
+                "name (ship-to customer)", "bill to", "arsc name",
+            ])),
+            'sales_order_number': quote(self.exact_search(headers, [
+                "inv.no", "order no", "sales_order_number", "false",
+                "invoice no.", "order#", "sales order number", "invoice no",
+                "hajoca order id", "customer po", "invoice number",
+                "sales order", "trans_id::text", "order number", "customer po#",
+                "invoice.....", "......... invoice", "invoice", "invoice#......",
+                "invoice#", "invoice#.", "invoice #", "inv.num", "purchase order",
+                "po number", "transaction id", "invoice id", "transaction #",
+                "trans_id", "customer po id", "cust po",
+            ])),
+            'ordered_on': quote(self.exact_search(headers, [
+                "gmatter_ordered_on", "ship date", "invoice date", "inv-date", "invdate",
+                "process date", "process_date", "date", "ship/rec. date", "shipdate",
+                "order_date", "shipdate....", "shipped date", "invoice_date",
+                "inv date", "inv.date", "trans_date", "date.ord", "order_date",
+                "invoicedate", "order date", "transaction date", "order date",
+                "process.date",
+            ])),
+            'item_sku': quote(self.exact_search(headers, [
+                "product_id", "product id", "catalognumber (product)", "vend.code",
+                "vendor part #", "item_sku", "item sku", "part number",
+                "prod no..", "code (product)", "product #", "item #", "item id",
+                "product code", "buy line",
+            ])),
+            'item_sku_alt': quote(self.exact_search(headers, [
+                "buy line (product)", "cat #.........................", "catalognumber (product)",
+                "product number", "alt_code", "alt.1.sp", "alt code",
+                "item_sku", "vdr catalog # (product)", "code", "prod no..",
+                "product code", "alt.1",
+            ])),
+            'item_sku_category': quote(self.exact_search(headers, [
+                "line position", "buy line (product)", "line", "cat #.........................",
+                "false", "code (buy line)", "code (product category)", "item_sku_category",
+                "product price group code", "name (price line)", "fast.code", "pricelineid",
+                "buy.line", "group", "group description", "item sku category", "category",
+                "name (buy line)", "linebuy description", "linebuy description",
+                "product alt code (product)", "gph level 4", "name (product category)",
+                "buy line", "priceline", "code (price line)", "linebuy#", "fcuscode",
+                "item number", "linebuy",
+            ])),
+            'unit_price': quote(self.exact_search(headers, [
+                "price per", "price each", "unit price....", "sales per qty", "net price ea",
+                "unit price", "product net price", "unit_price", "pipe per foot",
+                "per piece or per foot", "net each", "cost per", "unit pricing",
+                "price per foot", "unit…..", "unit", "value/item", "unit value",
+                "unit….", "price per", "unit amount", "net.price", "unit price2",
+                "unit_cost", "item price", "net", "price", "price/ea", "sales/item",
+                "unite price", "c10", "sum of net price", "per unit price",
+                "price per unit", "net price", "unit pricing", "cost/item", "unit sales",
+                "unitprice",
+            ])),
+            'ship_quantity': quote(self.exact_search(headers, [
+                "gmatter_shipped_qty", "quantity", "shipped qty", "qty…..", "qty",
+                "ship quantity", "count", "qty. in ft", "qty sold", "qty sold",
+                "ship_quantity::int", "product quantity shipped", "shippedqty",
+                "qty shipp", "qty shipped", "qty in feet", "sum of quantity shipped",
+                "sale.qty", "sum of ship quantity", "shipped ext", "line quantity",
+                "ship.qty", "quantity shipped", "shipped", "ship_quantity",
+                "qty. in feet", "ship qty", "ship quantity", "qtyship",
+                "external ship quantity", "qtyshp", "quantity invoiced",
+            ])),
+            'uom': quote(self.exact_search(headers, [
+                "uofm", "shipped ext", "uom per", "um", "unit of measure", "uom", "pricing unit",
+            ])),
+            'extended_price': quote(self.exact_search(headers, [
+                "unit price extended", "extended price", "ext. sales", "extended_price", "ext",
+                "net_prod_amt_calc", "total price", "ext-amt", "ext", "sales…..",
+                "sum of net product amount", "sales  $", "ext. amount", "extprice",
+                "ext amount......", "value", "sum of sales", "amount", "net billings",
+                "dollars", "totalnet", "extension", "total sales", "sum of linetotal",
+                "sale price", "cost", "ext. price", "amount......", "ext. amt.",
+                "ext amount", "ext cost", "extended price", "ext amount....",
+                "net product amount", "sales dollars", "totals", "ext sales amt",
+                "extended amount", "ext net product amount", "ext price",
+                "invoice line extension", "sales", "ext cost", "total_cost",
+                "ext price", "net prod amount calc", "ext. amount......", "extamt",
+                "sales$", "total",
+            ])),
+            'product_description': quote(self.exact_search(headers, [
+                "gmatter_item_description", "product_desc", "product description line 1",
+                "product description", "product description................",
+                "alt code - product description", "desc", "productdescription",
+                "product_description", ". product........................",
+                "description................", "item desc", "full description",
+                "name (product)", "item description",
+                "product description (product)", "o   product", "proddesc",
+                "description line 1", "description (product)", "item_description",
+                "description", "product........................",
+                "item description", "item decription", "part description", "proddesc",
+            ])),
+            'item_upc': quote(self.exact_search(headers, [
+                "upc (product)", "upc", "item_upc", "item upc", "upc number",
+            ])),
         }
 
     def find_header_row(self, df: pd.DataFrame) -> int:
@@ -229,7 +288,7 @@ class ExcelFormatAnalyzer:
         df = df.fillna('')
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         creds = ServiceAccountCredentials.from_json_keyfile_name(
-            '/Users/lorimartella/Documents/gmatter/charlotte_pipe/cpf_python_scripts/fifth-branch-460502-g8-0989e57a0069.json', scope)
+            '/Users/lorimartella/Documents/gmatter/charlotte_pipe/cpf_python_scripts/service_account.json', scope)
         client = gspread.authorize(creds)
         sheet = client.open_by_key(sheet_id)
         try:
@@ -263,12 +322,12 @@ class ExcelFormatAnalyzer:
             return
 
         columns = [
-            'payment_run','file_name','sheet_name','structure_type','headers',
-            'data_range','header_range','use_header','rows_count',
-            'process','submitted_by','contractor_vendor_number','contractor_name',
-            'wholesaler_vendor_number','wholesaler_name','vendor','customer_name',
-            'sales_order_number','ordered_on','item_sku','item_sku_alt','item_sku_category',
-            'item_upc','product_description','unit_price','ship_quantity','uom','extended_price'
+            'payment_run', 'file_name', 'sheet_name', 'structure_type', 'headers',
+            'data_range', 'header_range', 'use_header', 'rows_count',
+            'process', 'submitted_by', 'contractor_vendor_number', 'contractor_name',
+            'wholesaler_vendor_number', 'wholesaler_name', 'vendor', 'customer_name',
+            'sales_order_number', 'ordered_on', 'item_sku', 'item_sku_alt', 'item_sku_category',
+            'item_upc', 'product_description', 'unit_price', 'ship_quantity', 'uom', 'extended_price'
         ]
 
         df_summary = pd.DataFrame(self.summary_data)
@@ -300,7 +359,7 @@ class ExcelFormatAnalyzer:
 # -----------------------------
 if __name__ == "__main__":
     FOLDER_PATH = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/unspecified"
-    SHEET_ID = "1riKNLl_6Uqaoed2V1HKHn168HmAvcXc4V1uvGRe15-E"
+    SHEET_ID = "1-iVY5UIkze_xPkoS9EB7yDH5d-PoQRve4FYmnf4tb1U"
 
     analyzer = ExcelFormatAnalyzer(FOLDER_PATH)
     analyzer.run(SHEET_ID)
