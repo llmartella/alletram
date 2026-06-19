@@ -163,7 +163,7 @@ class ExcelStructureAnalyzer:
                 "sales$", "total",
             ])),
             'product_description': quote(self.exact_search(headers, [
-                "gmatter_item_description", "product_desc", "product description line 1",
+                "gmatter_item_description", "product_desc", "product desc", "product description line 1",
                 "product description", "product description................",
                 "alt code - product description", "desc", "productdescription",
                 "product_description", ". product........................",
@@ -359,7 +359,7 @@ class ExcelFormatAnalyzer:
 # -----------------------------
 if __name__ == "__main__":
     FOLDER_PATH = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/unspecified"
-    SHEET_ID = "1-iVY5UIkze_xPkoS9EB7yDH5d-PoQRve4FYmnf4tb1U"
+    SHEET_ID = "1_zDEq0q1L1zqcdqxJLWanHCkRmKnzw4h05v5arbj81M"
 
     analyzer = ExcelFormatAnalyzer(FOLDER_PATH)
     analyzer.run(SHEET_ID)
