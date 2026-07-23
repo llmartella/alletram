@@ -44,7 +44,7 @@ from googleapiclient.discovery import build
 # =============================================================================
 # VS CODE CONFIG
 # =============================================================================
-VSCODE_SHEET_ID     = "1riKNLl_6Uqaoed2V1HKHn168HmAvcXc4V1uvGRe15-E"
+VSCODE_SHEET_ID     = "1OJwlH3wKcwehdUoFE7GcwZp5nQmcpUAAuqFWwtfm_5g"
 VSCODE_DATA_DIR     = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/unspecified/done"
 VSCODE_OUTPUT_DIR   = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/cpf_python_scripts/sql_output"
 VSCODE_CREATE_TABLE = False
@@ -364,7 +364,7 @@ SCOPES      = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 def get_credentials() -> Credentials:
     creds      = None
     token_path = BASE_DIR / "token.pkl"
-    creds_path = BASE_DIR / "credentials.json"
+    creds_path = BASE_DIR / "oauth_desktop_app.json"
 
     if token_path.exists():
         with open(token_path, "rb") as f:

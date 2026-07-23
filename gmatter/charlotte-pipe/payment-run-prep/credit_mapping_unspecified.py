@@ -156,13 +156,13 @@ class ExcelStructureAnalyzer:
                 "Master Vendor Name", "MFR", "VENDOR_NAME", "Vendor","Manufacturer", "PRIMVDR.NAME","Name (Pay To Vendor)"
             ])),
             'customer_name': quote(match(headers, [
-                "gmatter_customer","CustName","Customer Name............","Customer","CUST NAME","Customer Name - Bill To","Customer Name","Customer Name.............","CompanyName-3","Name (Bill To)","Customer ID Desc","'Billing Customer'[CustomerName]"
+                "gmatter_customer","Contractor_name","CustName","Customer Name............","Customer","CUST NAME","Customer Name - Bill To","Customer Name","Customer Name.............","CompanyName-3","Name (Bill To)","Customer ID Desc","'Billing Customer'[CustomerName]"
             ])),
             'sales_order_number': quote(match(headers, [
-                "gmatter_sales_order_number","gmatter_invoice_number","e Invoice","INVOICE#","Order ID","ORDER#","Invoice#......  W","Invoice Number","Invoice","Invoice #","Order Number","Sales Order Number","Invoice#","Invoice#......"
+                "gmatter_sales_order_number","gmatter_invoice_number","Sales_order_number","e Invoice","INVOICE#","Order ID","ORDER#","Invoice#......  W","Invoice Number","Invoice","Invoice #","Order Number","Sales Order Number","Invoice#","Invoice#......"
             ])),
             'ordered_on': quote(match(headers, [
-                "gmatter_ordered_on","gmatter_order_date","Ship Date","INV-DATE","InvDate","Date", "INVOICE DT","SHIP DATE","ShipDate","SHIPDATE","ShipDate  P","hipDate  P","Ship/Rec. Date","Invoice Date"
+                "gmatter_ordered_on","gmatter_order_date","Order_date","Ship Date","INV-DATE","InvDate","Date", "INVOICE DT","SHIP DATE","ShipDate","SHIPDATE","ShipDate  P","hipDate  P","Ship/Rec. Date","Invoice Date"
             ])),
             'item_sku': quote(match(headers, [
                 "gmatter_item_sku","Item Number","Product ID","Eclipse Product ID","Product#"
@@ -175,17 +175,17 @@ class ExcelStructureAnalyzer:
                 "gmatter_item_sku_category","Sell Group","Buy Line","PRICE LINE","# Inv Lines","PRC LINE", "Line #: 6.0","Buyline","Price Line","Buy Group","Price Lin"
             ])),
             'unit_price': quote(match(headers, [
-                "COST","Sales  $","COGS EA","Amount......","Unit Price","UnitPrice","Sales","Stock Net Unit","List","Unit Cost/Ea","Unit Cost","COGS Per","Cost/Item"
+                "COST","Sales  $","Unit_price","COGS EA","Amount......","Unit Price","UnitPrice","Sales","Stock Net Unit","List","Unit Cost/Ea","Unit Cost","COGS Per","Cost/Item"
             ])),
             'ship_quantity': quote(match(headers, [
                 "gmatter_quantity_shipped","ship_quantity","Shipp","Sum of Quantity Shipped","QtyShp", "Sum of SHIP QTY","Ship Qty","y Shipp","Qty Shipped Ext","Qty Shipped","QTY","Qty/Unit","Quantity","Qty","SALE QTY","Shipped","SHIP QTY","Qty Shipp","Ship  Quantity"
             ])),
             'uom': quote(match(headers, ["uom", "UofM","UM"])),
             'extended_price': quote(match(headers, [
-                "gmatter_extended_price","Amount......","Extension","TOTALCOST","COGS","Sales","Ext Cost","Ext Amt","Extension Amount","EXT COST","Ext COGS........","Ext Amount......","Stock Net Ext","EXT PRICE","Subtotal","Sum of EXT ACTUAL COST","OGS........  G","Ext Cost........","Amount......  Ext"
+                "gmatter_extended_price","Extended_price","Amount......","Extension","TOTALCOST","COGS","Sales","Ext Cost","Ext Amt","Extension Amount","EXT COST","Ext COGS........","Ext Amount......","Stock Net Ext","EXT PRICE","Subtotal","Sum of EXT ACTUAL COST","OGS........  G","Ext Cost........","Amount......  Ext"
             ])),
             'product_description': quote(match(headers, [
-                "gmatter_item_description","Description","Name (Product)","ProdDesc","Description 1 (Product)","Product........................",". Product........................","Product Description","Product........................    Qt","PRODUCT DESCRIPTION","Item Description","DESCRIPTION","Product Description................ Price Lin","PROD DESC","Product........................    Qty","Product Description...............","Product","Product Description................","PROD DESCRIP"
+                "gmatter_item_description","Item_description","Description","Name (Product)","ProdDesc","Description 1 (Product)","Product........................",". Product........................","Product Description","Product........................    Qt","PRODUCT DESCRIPTION","Item Description","DESCRIPTION","Product Description................ Price Lin","PROD DESC","Product........................    Qty","Product Description..............","Product Description...............","Product","Product Description................","PROD DESCRIP"
             ])),
             'item_upc': quote(match(headers, ["PRIMARY UPC#","UPC (Primary)"])),
             'material_group_number': quote(match(headers, ["MG"]))
@@ -325,7 +325,7 @@ class ExcelFormatAnalyzer:
 
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         creds = ServiceAccountCredentials.from_json_keyfile_name(
-            '/Users/lorimartella/Documents/gmatter/charlotte_pipe/cpf_python_scripts/fifth-branch-460502-g8-0989e57a0069.json', scope)
+            '/Users/lorimartella/Documents/gmatter/charlotte_pipe/cpf_python_scripts/service_account.json', scope)
         client = gspread.authorize(creds)
 
         sheet = client.open_by_key(sheet_id)
@@ -392,7 +392,7 @@ class ExcelFormatAnalyzer:
 
 if __name__ == "__main__":
     FOLDER_PATH = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/credits"
-    SHEET_ID = "1QQtTNp6jc1o_nlmrP3b-_SZBnTZHx6tu3RUSCjjjoko"
+    SHEET_ID = "1v3MdsUX0bK959jv4TiH6hDbpX2Zgh0dJF_dhnBdY8e0"
 
     analyzer = ExcelFormatAnalyzer(FOLDER_PATH)
     analyzer.run(SHEET_ID)
