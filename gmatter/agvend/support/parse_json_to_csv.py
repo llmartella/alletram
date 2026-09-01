@@ -2,6 +2,8 @@ import json
 import csv
 from datetime import datetime
 
+##put json in csv with all transactions
+
 def flatten_transactions(data):
     rows = []
     participant_key = data.get("participant_key", "")

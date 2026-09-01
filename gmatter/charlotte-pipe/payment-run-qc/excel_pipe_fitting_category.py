@@ -48,7 +48,7 @@ def classify_row(description):
         if kw not in seen:
             seen.append(kw)
     keywords_found = ', '.join(seen)
-    # pick the category of the highest-priority match (ties -> first found)
+    # pick the category of the highest-priority match (ties -> first found),
     final_category = max(matches, key=lambda m: m[2])[1]
     return pd.Series({'keywords_found': keywords_found, 'final_category': final_category})
 

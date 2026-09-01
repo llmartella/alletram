@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 # ============================================================
-# EDIT THESE TWO PATHS, THEN RUN THE SCRIPT
+# EDIT THESE TWO PATHS, THEN RUN THE SCRIPT.
 # ============================================================
 
 INPUT_FILE = "/Users/lorimartella/Documents/gmatter/agvend/support/CALC troubleshooting/CALC response input/basf_response.json"

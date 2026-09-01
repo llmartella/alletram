@@ -1,6 +1,8 @@
 import duckdb
 import pandas as pd
 
+## load tx
+
 def load_file_to_duckdb(
     input_file,
     duckdb_file="/Users/lorimartella/Documents/gmatter/charlotte_pipe/charlotte_pipe.duckdb"
@@ -27,6 +29,6 @@ def load_file_to_duckdb(
     conn.close()
 
 if __name__ == "__main__":
-    input_file = "/Users/lorimartella/Downloads/transactions_20260427.xlsx"
+    input_file = "/Users/lorimartella/Downloads/transactions_20260810 (1).csv"
     load_file_to_duckdb(input_file)
     print("Data successfully loaded into contractor_transactions table.")

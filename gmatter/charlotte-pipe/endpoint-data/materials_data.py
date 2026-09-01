@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional, List
 # Google Sheets API scope
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 
-# Fixed column order for the output sheet to show relevant fields first 
+# Fixed column order for the output sheet to show relevant fields first.
 COLUMN_ORDER = [
     "Branch_Name",
     "Branch_Number",

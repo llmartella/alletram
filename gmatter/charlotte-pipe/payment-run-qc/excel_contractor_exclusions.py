@@ -35,7 +35,7 @@ def create_exclusions_report(excel_path, output_csv, sheet_name="Sheet1"):
                         exclude_flag,
                         f'Found "{term}" but exclude is not Y'
                     ])
-                break  # stop checking after first term match
+                break  # stop checking after first term match.
 
     if results:
         report_df = pd.DataFrame(results, columns=[

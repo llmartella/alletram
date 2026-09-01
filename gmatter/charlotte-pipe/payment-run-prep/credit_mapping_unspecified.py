@@ -23,7 +23,7 @@ warnings.filterwarnings('ignore')
 #                     all other fields continue to use the default logic.
 #
 # Rules are evaluated in ORDER — first match wins.
-# If no rule fires, all fields use the existing default logic unchanged.
+# If no rule fires, all fields use the existing default logic unchanged..
 # ---------------------------------------------------------------------------
 CONDITIONAL_MAPPING_RULES = [
     {
