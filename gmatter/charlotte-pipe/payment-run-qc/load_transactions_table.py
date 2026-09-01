@@ -1,7 +1,7 @@
 import duckdb
 import pandas as pd
 
-## load tx
+## load tx.
 
 def load_file_to_duckdb(
     input_file,
