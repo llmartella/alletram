@@ -165,14 +165,14 @@ class ExcelStructureAnalyzer:
                 "gmatter_ordered_on","gmatter_order_date","Order_date","Ship Date","INV-DATE","InvDate","Date", "INVOICE DT","SHIP DATE","ShipDate","SHIPDATE","ShipDate  P","hipDate  P","Ship/Rec. Date","Invoice Date"
             ])),
             'item_sku': quote(match(headers, [
-                "gmatter_item_sku","Item Number","Product ID","Eclipse Product ID","Product#"
+                "gmatter_item_sku","Item_SKU","Item Number","Product ID","Eclipse Product ID","Product#"
             ])),
             'item_sku_alt': quote(match(headers, [
                 "alt_code", "alt code", "product_number", "product number",
                 "product #", "catalog", "alt1", "alt.1", "CatalogNo","ALT1","Code (Product)"
             ])),
             'item_sku_category': quote(match(headers, [
-                "gmatter_item_sku_category","Sell Group","Buy Line","PRICE LINE","# Inv Lines","PRC LINE", "Line #: 6.0","Buyline","Price Line","Buy Group","Price Lin"
+                "gmatter_item_sku_category","Item_SKU_category","Sell Group","Buy Line","PRICE LINE","# Inv Lines","PRC LINE", "Line #: 6.0","Buyline","Price Line","Buy Group","Price Lin"
             ])),
             'unit_price': quote(match(headers, [
                 "COST","Sales  $","Unit_price","COGS EA","Amount......","Unit Price","UnitPrice","Sales","Stock Net Unit","List","Unit Cost/Ea","Unit Cost","COGS Per","Cost/Item"
@@ -187,8 +187,8 @@ class ExcelStructureAnalyzer:
             'product_description': quote(match(headers, [
                 "gmatter_item_description","Item_description","Description","Name (Product)","ProdDesc","Description 1 (Product)","Product........................",". Product........................","Product Description","Product........................    Qt","PRODUCT DESCRIPTION","Item Description","DESCRIPTION","Product Description................ Price Lin","PROD DESC","Product........................    Qty","Product Description..............","Product Description...............","Product","Product Description................","PROD DESCRIP"
             ])),
-            'item_upc': quote(match(headers, ["PRIMARY UPC#","UPC (Primary)"])),
-            'material_group_number': quote(match(headers, ["MG"]))
+            'item_upc': quote(match(headers, ["PRIMARY UPC#","Item_UPC","UPC (Primary)"])),
+            'material_group_number': quote(match(headers, ["MG","Material_group"]))
         }
 
         # Apply conditional overrides on top of the default mappings
@@ -392,7 +392,7 @@ class ExcelFormatAnalyzer:
 
 if __name__ == "__main__":
     FOLDER_PATH = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/credits"
-    SHEET_ID = "1v3MdsUX0bK959jv4TiH6hDbpX2Zgh0dJF_dhnBdY8e0"
+    SHEET_ID = "1Rhi2HgUarm-FFz-vWsfLHmpPDRTYGOSLP9uoui99-Oo"
 
     analyzer = ExcelFormatAnalyzer(FOLDER_PATH)
     analyzer.run(SHEET_ID)

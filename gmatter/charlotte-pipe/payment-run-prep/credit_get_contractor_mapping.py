@@ -39,7 +39,7 @@ from googleapiclient.discovery import build
 
 # Google Drive folder to scan (root + all subfolders are searched).
 # Found in the folder URL: drive.google.com/drive/folders/<FOLDER_ID>
-SOURCE_FOLDER_ID = "1vuyxzhvo0NB9nX4-Myyj9NPZoBuzBVAA"
+SOURCE_FOLDER_ID = "1jcgGFn-dcqmnGqwhgSu9F86Jhh-TL-Rr" ## change this to the folder of the mapping document
 
 # Google Sheet to write mapping results into.
 # Found in the sheet URL: docs.google.com/spreadsheets/d/<SHEET_ID>
@@ -67,7 +67,7 @@ def get_credentials():
     """Return valid OAuth credentials, refreshing or re-authorising as needed."""
     creds = None
     token_path = BASE_DIR / "token.pkl"
-    creds_path = BASE_DIR / "credentials.json"
+    creds_path = BASE_DIR / "oauth_desktop_app.json"
 
     if token_path.exists():
         with open(token_path, "rb") as f:

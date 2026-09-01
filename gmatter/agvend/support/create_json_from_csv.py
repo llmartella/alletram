@@ -3,8 +3,8 @@ import json
 from datetime import datetime
 from collections import defaultdict
 
-INPUT_FILE = r"/Users/lorimartella/Documents/gmatter/agvend/support/redstar_helena_only.csv" #provide path to source file
-OUTPUT_FILE = r"/Users/lorimartella/Documents/gmatter/agvend/support/python/output/reconstructed_helena.json" #provide path to output file
+INPUT_FILE = r"/Users/lorimartella/Downloads/agtegra_delaro_aug2026.csv" #provide path to source file
+OUTPUT_FILE = r"/Users/lorimartella/Documents/gmatter/agvend/support/python/output/agtegra_delaaro.json" #provide path to output file
 
 
 def csv_to_json(input_file, output_file):

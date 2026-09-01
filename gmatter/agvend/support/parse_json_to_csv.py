@@ -1,5 +1,6 @@
 import json
 import csv
+from datetime import datetime
 
 def flatten_transactions(data):
     rows = []
@@ -25,15 +26,18 @@ def flatten_transactions(data):
             rows.append(row)
     return rows
 
-with open("", "r") as f:
+with open("/Users/lorimartella/Downloads/bayer_2026_invoices_and_purchase_invoices__request_agtegra_july_30.json", "r") as f:
     data = json.load(f)
 
 rows = flatten_transactions(data)
 
+from datetime import datetime
+
 if rows:
-    with open("/Users/lorimartella/Documents/gmatter/agvend/support/python/untitled folder/agtegra_bayer_20260529.json", "w", newline="") as f:
+    filename = f"output_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    with open(filename, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=rows[0].keys())
         writer.writeheader()
         writer.writerows(rows)
 
-print(f"Done — {len(rows)} rows written.")
+    print(f"Done — {len(rows)} rows written to {filename}.")

@@ -28,12 +28,12 @@ def create_exclusions_report(excel_path, output_csv, sheet_name="Sheet1"):
 
         for term in exclusion_terms:
             if term.lower() in item_desc:
-                # Issue: Found exclusion term but exclude != TRUE
-                if exclude_flag.lower() != "true":
+                # Issue: Found exclusion term but exclude != Y
+                if exclude_flag.lower() != "y":
                     results.append([
                         row["item_description"],
                         exclude_flag,
-                        f'Found "{term}" but exclude is not TRUE'
+                        f'Found "{term}" but exclude is not Y'
                     ])
                 break  # stop checking after first term match
 
@@ -59,7 +59,7 @@ def create_exclusions_report(excel_path, output_csv, sheet_name="Sheet1"):
 
 if __name__ == "__main__":
     create_exclusions_report(
-        excel_path="/Users/lorimartella/Downloads/material_overrides.xlsx",
+        excel_path="/Users/lorimartella/Downloads/20260810_summaries.xlsx",
         output_csv="/Users/lorimartella/Documents/gmatter/charlotte_pipe/cpf_python_scripts/outputs/03_exclusions_excel.csv",
-        sheet_name="20260713"
+        sheet_name="item_descriptions"
     )

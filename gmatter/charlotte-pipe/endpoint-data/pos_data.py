@@ -100,7 +100,12 @@ def main():
     PARAMS = {
         "AuthorizationNumber": "ClairVoyant_4GV",  # fill in
         "Passcode": "258a1a49-a5b4-48fd-bf65-b549ea36143a",             # fill in
+        # Optional date filters — uncomment and fill in as needed (format: YYYYMMDD, e.g. "20260101")
+        # "ReportingPeriod_Start_Date_YYYYMMDD": "",
+        # "ReportingPeriod_End_Date_YYYYMMDD": "",
+        "DateSubmitted_YYYYMMDD": "20260630"
     }
+
 
     print("Starting data fetch...")
     success = fetch_and_save_data(

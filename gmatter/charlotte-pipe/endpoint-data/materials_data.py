@@ -11,6 +11,66 @@ from typing import Dict, Any, Optional, List
 # Google Sheets API scope
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 
+# Fixed column order for the output sheet to show relevant fields first 
+COLUMN_ORDER = [
+    "Branch_Name",
+    "Branch_Number",
+    "Contractor_Offer_Name__r_Name",
+    "Name",
+    "Offer_Type__c",
+    "Description__c",
+    "DiscountPercentage",
+    "Fittings_text__c",
+    "Pipe_text__c",
+    "Start_Date__c",
+    "Expiration_Date__c",
+    "Material_Group__c",
+    "Status__c",
+    "Vendor_Record_Number__c",
+    "Division__c",
+    "Offer_Summary__c",
+    "CreatedDate",
+    "SAP_Acct__c",
+    "Discount_Amount__c",
+    "Commission_Group__c",
+    "Contractor_Key__c",
+    "Contractor_Offer_Name__c",
+    "Contractor_Offer_Name__r_Id",
+    "Contractor_Offer_Name__r_type",
+    "Contractor_Program__r",
+    "CreatedById",
+    "Disount_Type__c",
+    "Estimated_Annual_Accrual__c",
+    "Id",
+    "IsDeleted",
+    "Job_Address__City__s",
+    "Job_Address__CountryCode__s",
+    "Job_Address__PostalCode__s",
+    "Job_Address__StateCode__s",
+    "Job_Address__Street__s",
+    "Job_Project_Name_or_Quote__c",
+    "LastModifiedById",
+    "LastModifiedDate",
+    "Offer_Number__c",
+    "OwnerId",
+    "Payment_Schedule__c",
+    "Payment_Type__c",
+    "Percentage_Discount__c",
+    "Price_List__c",
+    "Program_Material_CreatedById",
+    "Program_Material_LastModifiedById",
+    "Program_Material_Name",
+    "Reason_for_making_the_offer__c",
+    "RecordTypeId",
+    "Regional_Manager__c",
+    "Sales_Rep_Account__c",
+    "Sales_Rep_Account__r_Name",
+    "Sales_Rep_Account__r_type",
+    "Who_will_be_paid_or_credited__c",
+    "Year_Active__c",
+    "type",
+]
+
 def authenticate_google_sheets(credentials_file: str) -> gspread.Client:
     """
     Authenticate with Google Sheets using OAuth2 client credentials.
@@ -94,20 +154,29 @@ def fetch_api_data(endpoint_url: str, params: Optional[Dict] = None) -> Optional
 
 def extract_columns_from_data(data: List[Dict]) -> List[str]:
     """
-    Extract all unique column names from the data.
+    Return the column order for the sheet: the fixed COLUMN_ORDER first
+    (in the specified order), followed by any additional columns found
+    in the data that aren't part of COLUMN_ORDER (appended alphabetically
+    at the end, so no data gets silently dropped).
     
     Args:
         data: List of dictionaries
         
     Returns:
-        List of column names
+        List of column names in the desired order
     """
-    columns = set()
+    all_keys = set()
     for item in data:
         if isinstance(item, dict):
-            columns.update(item.keys())
+            all_keys.update(item.keys())
     
-    return sorted(list(columns))
+    ordered_columns = [col for col in COLUMN_ORDER if col in all_keys]
+    extra_columns = sorted(all_keys - set(COLUMN_ORDER))
+    
+    if extra_columns:
+        print(f"⚠️ Found {len(extra_columns)} columns not in the defined order, appending at end: {extra_columns}")
+    
+    return ordered_columns + extra_columns
 
 def prepare_sheet_data(data: List[Dict], columns: List[str]) -> List[List]:
     """
@@ -329,7 +398,7 @@ def main():
         print("❌ Failed to fetch data from API")
         return
     
-    # Step 3: Extract column names
+    # Step 3: Extract column names (in the defined order)
     columns = extract_columns_from_data(api_data)
     print(f"📋 Found {len(columns)} columns: {columns[:10]}{'...' if len(columns) > 10 else ''}")
     
@@ -386,6 +455,10 @@ SETUP INSTRUCTIONS:
    Subsequent runs will use saved credentials.
 
 NOTES:
+- Columns are written in the fixed order defined in COLUMN_ORDER at the
+  top of this file. Any columns present in the API data but not listed
+  in COLUMN_ORDER are appended (alphabetically) after the defined ones,
+  so no data is silently dropped if the API adds a new field.
 - The script automatically detects column structure from your API data
 - It handles different API response formats (arrays, objects with data arrays, etc.)
 - Large datasets are written in batches for better performance

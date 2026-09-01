@@ -36,7 +36,7 @@ from googleapiclient.discovery import build
 # ---------------------------------------------------------------------------
 # Default paths — edit these to match your environment
 # ---------------------------------------------------------------------------
-DEFAULT_SHEET_ID = "1QQtTNp6jc1o_nlmrP3b-_SZBnTZHx6tu3RUSCjjjoko"
+DEFAULT_SHEET_ID = "1v3MdsUX0bK959jv4TiH6hDbpX2Zgh0dJF_dhnBdY8e0"
 DEFAULT_DATA_DIR = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/credits/done"
 DEFAULT_OUTPUT   = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/cpf_python_scripts/sql_output_credit"
 

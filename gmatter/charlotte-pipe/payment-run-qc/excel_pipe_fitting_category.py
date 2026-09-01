@@ -1,8 +1,8 @@
 import pandas as pd
 
 # --- Configuration ---
-excel_file = "/Users/lorimartella/Downloads/material_overrides.xlsx"
-sheet_name = "20260713"  # change to a sheet name (string) if not the first sheet
+excel_file = "/Users/lorimartella/Downloads/20260810_summaries.xlsx"
+sheet_name = "item_descriptions"  # change to a sheet name (string) if not the first sheet
 output_csv = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/cpf_python_scripts/outputs/pipe_fitting_discrepancies_excel.csv"
 
 # Keywords with priority (keyword, category, priority)
@@ -18,9 +18,10 @@ keywords = [
 ]
 
 # Columns to carry through into the output, in addition to item_description/pipe/fittings
+# NOTE: 'competitor' removed - not present in current file structure (as of 2026-08 layout)
 original_cols = [
     'cast_iron', 'plastic', 'pvc', 'dwv', 'cpvc', 'cts', 'abs',
-    'competitor', 'exclude', 'segment'
+    'exclude', 'segment'
 ]
 
 # --- Load Excel into a DataFrame ---
