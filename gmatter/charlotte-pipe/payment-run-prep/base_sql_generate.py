@@ -44,7 +44,7 @@ from googleapiclient.discovery import build
 # =============================================================================
 # VS CODE CONFIG
 # =============================================================================
-VSCODE_SHEET_ID     = "1OJwlH3wKcwehdUoFE7GcwZp5nQmcpUAAuqFWwtfm_5g"
+VSCODE_SHEET_ID     = "1Rf0EKjj4CDKNbVJY3XF9puYFG_w9kU7UAWAeMvnFM3I" ## this is the unspecified base mapping sheet
 VSCODE_DATA_DIR     = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/unspecified/done"
 VSCODE_OUTPUT_DIR   = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/cpf_python_scripts/sql_output"
 VSCODE_CREATE_TABLE = False

@@ -260,6 +260,11 @@ class ExcelStructureAnalyzer:
             xl = pd.ExcelFile(file_path)
             results = []
             for sheet in xl.sheet_names:
+                # Skip "Validations" sheets entirely - they should not be analyzed
+                # or added to the Google Sheet.
+                if sheet.strip().lower() == 'validations':
+                    continue
+
                 info = self.get_data_range_info(file_path, sheet)
                 results.append({
                     'payment_run': 'YYYYMMDD',
@@ -392,7 +397,7 @@ class ExcelFormatAnalyzer:
 
 if __name__ == "__main__":
     FOLDER_PATH = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/credits"
-    SHEET_ID = "1Rhi2HgUarm-FFz-vWsfLHmpPDRTYGOSLP9uoui99-Oo"
+    SHEET_ID = "17-laqly-et5mOufHS_pJZD4JSQmbB8wBA0DWoE__XUg"
 
     analyzer = ExcelFormatAnalyzer(FOLDER_PATH)
     analyzer.run(SHEET_ID)

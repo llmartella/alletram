@@ -67,6 +67,13 @@ class ExcelStructureAnalyzer:
         def quote(val):
             return f'"{val}"' if val else 'NULL'
 
+        def quote_excluding(val, excluded_values):
+            # Like quote(), but forces NULL if the matched header value
+            # (case-insensitive) is one of the excluded values.
+            if val and val.strip().lower() in {e.lower() for e in excluded_values}:
+                return 'NULL'
+            return quote(val)
+
         return {
             'vendor': quote(self.exact_search(headers, [
                 "gmatter_vendor", "primvdr.name", "vendor", "master vendor id - name",
@@ -108,12 +115,12 @@ class ExcelStructureAnalyzer:
                 "prod no..", "code (product)", "product #", "item #", "item id",
                 "product code", "buy line",
             ])),
-            'item_sku_alt': quote(self.exact_search(headers, [
+            'item_sku_alt': quote_excluding(self.exact_search(headers, [
                 "buy line (product)", "cat #.........................", "catalognumber (product)",
                 "product number", "alt_code", "alt.1.sp", "alt code",
                 "item_sku", "vdr catalog # (product)", "code", "prod no..",
                 "product code", "alt.1",
-            ])),
+            ]), ["item_sku"]),
             'item_sku_category': quote(self.exact_search(headers, [
                 "line position", "buy line (product)", "line", "cat #.........................",
                 "false", "code (buy line)", "code (product category)", "item_sku_category",
@@ -236,6 +243,11 @@ class ExcelStructureAnalyzer:
         xl = pd.ExcelFile(file_path)
         results = []
         for sheet in xl.sheet_names:
+            # Skip "Validations" sheets entirely - they should not be analyzed
+            # or added to the Google Sheet.
+            if sheet.strip().lower() == 'validations':
+                continue
+
             info = self.get_data_range_info(str(file_path), sheet)
             results.append({
                 'payment_run': 'YYYYMMDD',
@@ -359,7 +371,7 @@ class ExcelFormatAnalyzer:
 # -----------------------------
 if __name__ == "__main__":
     FOLDER_PATH = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/unspecified"
-    SHEET_ID = "1_zDEq0q1L1zqcdqxJLWanHCkRmKnzw4h05v5arbj81M"
+    SHEET_ID = "1Rf0EKjj4CDKNbVJY3XF9puYFG_w9kU7UAWAeMvnFM3I"
 
     analyzer = ExcelFormatAnalyzer(FOLDER_PATH)
     analyzer.run(SHEET_ID)
