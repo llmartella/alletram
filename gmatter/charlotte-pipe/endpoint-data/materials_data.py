@@ -6,7 +6,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import os
 import pickle
-from typing import Dict, Any, Optional, List
+from datetime import date
+from typing import Dict, Any, Optional, List, Set, Tuple
 
 # Google Sheets API scope
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
@@ -358,10 +359,157 @@ def write_to_sheet(client: gspread.Client, sheet_id: str, worksheet_name: str,
         print(f"❌ Error writing to Google Sheets: {e}")
         return False
 
+def get_program_contractor_names(client: gspread.Client, sheet_id: str, tab_name: str,
+                                   column_header: str) -> List[str]:
+    """
+    Return ALL raw values (in row order, including duplicates) from the given
+    column on the given tab. No trimming, no case changes — values are
+    returned exactly as stored.
+    """
+    sheet = client.open_by_key(sheet_id)
+    worksheet = sheet.worksheet(tab_name)
+
+    all_values = worksheet.get_all_values()  # list of rows, each a list of cell strings
+    if not all_values:
+        raise ValueError(f"Tab '{tab_name}' appears to be empty.")
+
+    header_row = all_values[0]
+    try:
+        col_index = header_row.index(column_header)
+    except ValueError:
+        raise ValueError(
+            f"Column '{column_header}' not found in tab '{tab_name}'. "
+            f"Headers found: {header_row}"
+        )
+
+    values = []
+    for row in all_values[1:]:
+        if col_index < len(row):
+            value = row[col_index]
+        else:
+            value = ""  # row shorter than header row
+        if value != "":  # skip blank cells, keep everything else exactly as-is
+            values.append(value)
+
+    return values
+
+
+def get_contractors_names_and_next_row(
+    client: gspread.Client, sheet_id: str, tab_name: str, column_header: str
+) -> Tuple[gspread.Worksheet, Set[str], int]:
+    """Return (worksheet, existing_values_set, next_empty_row_number) for the
+    given column, found by header text rather than assuming a fixed column
+    letter."""
+    sheet = client.open_by_key(sheet_id)
+    worksheet = sheet.worksheet(tab_name)
+
+    all_values = worksheet.get_all_values()
+    if not all_values:
+        raise ValueError(f"Tab '{tab_name}' appears to be empty.")
+
+    header_row = all_values[0]
+    try:
+        col_index = header_row.index(column_header)
+    except ValueError:
+        raise ValueError(
+            f"Column '{column_header}' not found in tab '{tab_name}'. "
+            f"Headers found: {header_row}"
+        )
+
+    existing: Set[str] = set()
+    last_row_with_data = 1  # header row
+    for i, row in enumerate(all_values[1:], start=2):
+        if col_index < len(row) and row[col_index] != "":
+            existing.add(row[col_index])
+            last_row_with_data = i
+
+    next_row = last_row_with_data + 1
+    return worksheet, existing, next_row
+
+
+def add_new_contractor_names(client: gspread.Client) -> None:
+    """
+    Find contractor name variations in the Programs sheet's API_Data tab
+    (the sheet/tab this script just wrote to) that aren't already in the
+    Contractors sheet (exact string match), and append them directly to the
+    bottom of the contractors tab's original_contractor_name column, with a
+    note identifying the source and date.
+    """
+    # Programs sheet (source of contractor name variations) — same sheet/tab
+    # this script's write_to_sheet() step just populated.
+    PROGRAMS_SHEET_ID = "1MXm6sngsqDxAErjZm9odsaS80AS1HPqvhstfCFhdmys"
+    PROGRAMS_TAB_NAME = "API_Data"
+    PROGRAMS_CONTRACTOR_COLUMN = "Contractor_Offer_Name__r_Name"
+
+    # Contractors sheet (master list of known variations) — new values get
+    # appended directly here.
+    CONTRACTORS_SHEET_ID            = "17muso1TB00rbBYH0hiMzaCx0k8y_3u0OKhdKkrvgok4"
+    CONTRACTORS_TAB_NAME            = "contractors"
+    CONTRACTORS_NAME_COLUMN_HEADER  = "original_contractor_name"
+    CONTRACTORS_NAME_COLUMN_LETTER  = "A"
+    CONTRACTORS_NOTES_COLUMN_LETTER = "E"
+
+    NOTE_SOURCE_LABEL = "program material endpoint"
+
+    print("🚀 Checking for contractor name variations missing from the Contractors sheet...")
+    print("=" * 70)
+
+    # Step 1: Contractor name variations from the Programs sheet
+    print(f"\n📋 Reading contractor names from Programs sheet ('{PROGRAMS_TAB_NAME}' tab)...")
+    program_values = get_program_contractor_names(
+        client, PROGRAMS_SHEET_ID, PROGRAMS_TAB_NAME, PROGRAMS_CONTRACTOR_COLUMN
+    )
+    unique_program_names = set(program_values)
+    print(f"   Found {len(program_values)} reference(s), {len(unique_program_names)} unique variation(s)")
+
+    # Step 2: Known variations already in the Contractors sheet (exact strings)
+    print(f"\n📋 Reading existing names from Contractors sheet ('{CONTRACTORS_TAB_NAME}' tab)...")
+    worksheet, known_variations, next_row = get_contractors_names_and_next_row(
+        client, CONTRACTORS_SHEET_ID, CONTRACTORS_TAB_NAME, CONTRACTORS_NAME_COLUMN_HEADER
+    )
+    print(f"   Found {len(known_variations)} known variation(s)")
+
+    # Step 3: Determine what's missing — exact match only, no fuzzy/trim/case logic
+    missing = sorted(name for name in unique_program_names if name not in known_variations)
+
+    print(f"\n🔍 Result: {len(missing)} new variation(s) not found in Contractors sheet")
+
+    if not missing:
+        print("✅ Nothing new to add — every variation in Programs is already accounted for.")
+        return
+
+    # Step 4: Append new rows directly to the Contractors sheet
+    today = date.today().isoformat()
+    updates = []
+    for offset, name in enumerate(missing):
+        row_num = next_row + offset
+        note = f"added {today} from {NOTE_SOURCE_LABEL}"
+        updates.append({
+            "range": f"{CONTRACTORS_NAME_COLUMN_LETTER}{row_num}",
+            "values": [[name]],
+        })
+        updates.append({
+            "range": f"{CONTRACTORS_NOTES_COLUMN_LETTER}{row_num}",
+            "values": [[note]],
+        })
+
+    # The sheet's grid may not have enough rows allocated yet — expand it
+    # first if needed (separate from how many rows actually contain data).
+    required_rows = next_row + len(missing) - 1
+    if worksheet.row_count < required_rows:
+        worksheet.add_rows(required_rows - worksheet.row_count)
+
+    print(f"📝 Appending {len(missing)} new row(s) to '{CONTRACTORS_TAB_NAME}' "
+          f"(rows {next_row}-{next_row + len(missing) - 1})...")
+    worksheet.batch_update(updates, value_input_option="USER_ENTERED")
+
+    print(f"✅ Appended {len(missing)} row(s) to '{CONTRACTORS_TAB_NAME}' tab.")
+    for name in missing:
+        print(f"  + {name!r}")
+
+
 def main():
     """Main function to run the API to Google Sheets sync."""
-    
-    # ========== CONFIGURATION ==========
     
     # API Configuration
     API_ENDPOINT = "https://cpf-api.charlottepipe.com/GET_ContractorDB_ContractorProgram_ContractorProgramMaterial?AuthorizationNumber=ClairVoyant_4GV&Passcode=258a1a49-a5b4-48fd-bf65-b549ea36143a"  # Replace with your API endpoint
@@ -412,9 +560,17 @@ def main():
     
     # Step 5: Write to Google Sheets
     success = write_to_sheet(client, SHEET_ID, WORKSHEET_NAME, columns, sheet_data)
-    
+
     if success:
         print("\n🎉 Script completed successfully!")
+
+        # Step 6: Check for new contractor names in the freshly-written
+        # API_Data and add any not already in the Contractors sheet.
+        print("\n" + "=" * 50)
+        try:
+            add_new_contractor_names(client)
+        except Exception as e:
+            print(f"❌ Contractor name check failed: {e}")
     else:
         print("\n❌ Script failed!")
 
@@ -463,4 +619,10 @@ NOTES:
 - It handles different API response formats (arrays, objects with data arrays, etc.)
 - Large datasets are written in batches for better performance
 - Credentials are saved locally for future runs (token.pickle file)
+- After a successful write, this script automatically checks the freshly
+  written API_Data for contractor name variations not already present in
+  the Contractors sheet, and appends any new ones directly to that sheet's
+  original_contractor_name column, with a note in column E:
+  "added YYYY-MM-DD from program material endpoint". This logic is fully
+  self-contained in this file — no separate script or import needed.
 """
