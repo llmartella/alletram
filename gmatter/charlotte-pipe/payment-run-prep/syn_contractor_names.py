@@ -9,18 +9,26 @@ Compares the unique customer_name / contractor_name values found across:
   - template files        -> contractor_name column, "REPORTED SALES DATA"
                               sheet, header in row 6, read fresh from disk
                               (no pipeline/DuckDB table exists for these yet)
+                              — PLUS the contractor name embedded in each
+                              Template file's own name (position 6, 0-indexed,
+                              splitting on "_")
 
 against the master contractors list (Google Sheet, "contractors" tab,
 "original_contractor_name" column, first column). Any value not found there
 (exact match — case, whitespace, and special characters all matter) gets
 appended to the bottom of column A, with a note in column E:
-"added YYYY-MM-DD from <source> file data" naming which pipeline(s)
-contributed that value (e.g. "base/credit" if it showed up in both).
+"added YYYY-MM-DD from <source> file data (<file names>)" naming which
+pipeline(s) contributed that value (e.g. "base/credit" if it showed up in
+both) and every source file it was actually found in.
 
 Base and credit values come straight from DuckDB — this script does NOT
 re-read those Excel files or mapping docs. That means it's only as current
 as your last run of base_mapping_qc.py / credit_mapping_qc.py; run those
 first if you want this month's data included.
+
+Optionally limits base/credit data to files processed in roughly the last
+N days (see LOOKBACK_DAYS below) — comment that line out entirely to
+include all historical data instead, with no limit.
 
 Requires oauth_desktop_app.json in the same directory as this script
 (same OAuth client used by the other pipeline scripts). A separate
@@ -32,8 +40,9 @@ Usage:
 """
 
 import pickle
+import re
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import duckdb
@@ -65,6 +74,12 @@ Min.__set__ = _patched_min_set
 # CONFIGURATION
 # =============================================================================
 DUCKDB_PATH = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/charlotte_pipe.duckdb"
+
+# Only include base/credit rows from files processed in roughly the last N
+# days (based on the trailing date embedded in each file's name — see
+# extract_processed_date() below). To include ALL historical data instead,
+# with no date limit, just comment out this whole line.
+LOOKBACK_DAYS = 90
 
 TEMPLATES_DIR        = Path("/Users/lorimartella/Documents/gmatter/charlotte_pipe/templates")
 TEMPLATE_SHEET_NAME  = "REPORTED SALES DATA"
@@ -112,13 +127,41 @@ def get_credentials():
 # Source 1 & 2: DuckDB (base + credit)
 # ---------------------------------------------------------------------------
 
-def get_duckdb_customer_names() -> dict[str, set[str]]:
-    """Return {value: {'base', 'credit'}-subset} for every distinct, non-null
-    customer_name found in transaction_mapping_base and
-    transaction_mapping_credit. Values come through exactly as DuckDB stored
-    them (leading/trailing whitespace trimmed at load time; nothing else
-    altered)."""
-    sources: dict[str, set[str]] = defaultdict(set)
+# Charlotte Pipe file names end with one or more standalone 8-digit
+# (YYYYMMDD) tokens — typically a payment period start/end and a processed
+# date, e.g. "..._20260401_20260630_20260910_charlotte.xlsx". The lookaround
+# pattern below only matches a token that isn't itself part of a longer run
+# of digits (so it doesn't false-match inside a 10-digit vendor number, etc).
+_DATE_TOKEN_PATTERN = re.compile(r"(?<!\d)(\d{8})(?!\d)")
+
+
+def extract_processed_date(archive_file_name: str):
+    """Best-effort: pull the LAST standalone 8-digit token out of a source
+    file's name and parse it as the date it was processed. Returns None if
+    no such token is found or it doesn't parse as a real calendar date —
+    callers should treat None as "unknown age" rather than "too old"."""
+    matches = _DATE_TOKEN_PATTERN.findall(archive_file_name or "")
+    if not matches:
+        return None
+    try:
+        return datetime.strptime(matches[-1], "%Y%m%d").date()
+    except ValueError:
+        return None
+
+
+def get_duckdb_customer_names(lookback_days) -> dict[str, dict]:
+    """Return {value: {"sources": {'base','credit'}-subset, "files": {file
+    names}}} for every distinct, non-null customer_name found in
+    transaction_mapping_base and transaction_mapping_credit. Values come
+    through exactly as DuckDB stored them (leading/trailing whitespace
+    trimmed at load time; nothing else altered).
+
+    If lookback_days is not None, only rows from files whose embedded
+    processed-date is within the last lookback_days days are included. Rows
+    whose date can't be determined are included regardless, rather than
+    risking silently dropping current data over a naming quirk."""
+    result: dict[str, dict] = defaultdict(lambda: {"sources": set(), "files": set()})
+    cutoff = date.today() - timedelta(days=lookback_days) if lookback_days is not None else None
 
     con = duckdb.connect(DUCKDB_PATH, read_only=True)
 
@@ -127,29 +170,53 @@ def get_duckdb_customer_names() -> dict[str, set[str]]:
         ("transaction_mapping_credit", "credit"),
     ]:
         rows = con.execute(f"""
-            SELECT DISTINCT customer_name FROM {table}
+            SELECT DISTINCT customer_name, archive_file_name FROM {table}
             WHERE customer_name IS NOT NULL
         """).fetchall()
-        for (value,) in rows:
-            sources[value].add(source_label)
+
+        skipped_old = 0
+        undated = 0
+        for value, archive_file_name in rows:
+            if cutoff is not None:
+                processed_date = extract_processed_date(archive_file_name)
+                if processed_date is not None and processed_date < cutoff:
+                    skipped_old += 1
+                    continue
+                if processed_date is None:
+                    undated += 1
+            result[value]["sources"].add(source_label)
+            if archive_file_name:
+                result[value]["files"].add(archive_file_name)
+
+        if cutoff is not None:
+            note = (f"  {table}: skipped {skipped_old} row(s) older than "
+                    f"{lookback_days} day(s)")
+            if undated:
+                note += (f"; {undated} row(s) had no readable date and were "
+                         f"included anyway")
+            print(note)
 
     con.close()
-    return sources
+    return dict(result)
 
 
 # ---------------------------------------------------------------------------
 # Source 3: Template files (read fresh — no pipeline/DuckDB table exists yet)
 # ---------------------------------------------------------------------------
 
-def get_template_contractor_names() -> dict[str, set[str]]:
-    """Return {value: {'template'}} for every non-blank contractor_name value
-    found across all Template Excel files. Values are used exactly as read
-    (no trimming), since Template files don't go through DuckDB at all."""
-    sources: dict[str, set[str]] = defaultdict(set)
+def get_template_contractor_names() -> dict[str, dict]:
+    """Return {value: {"sources": {"template"}, "files": {file names}}} for
+    every non-blank contractor_name value found across all Template Excel
+    files — both from the contractor_name column's cell data, AND from each
+    file name itself (position 6, 0-indexed, splitting on "_" — the same
+    slot Template file names embed the contractor name in). Values are used
+    exactly as read/extracted (no trimming), since Template files don't go
+    through DuckDB at all."""
+    result: dict[str, dict] = defaultdict(lambda: {"sources": set(), "files": set()})
 
     if not TEMPLATES_DIR.exists():
         print(f"  WARNING: templates folder not found: {TEMPLATES_DIR}")
-        return sources
+        return dict(result)
 
     excel_files = sorted(
         f for ext in TEMPLATE_EXTENSIONS
@@ -157,8 +224,19 @@ def get_template_contractor_names() -> dict[str, set[str]]:
     )
 
     header_index = TEMPLATE_HEADER_ROW - 1  # convert to 0-indexed
+    FILENAME_CONTRACTOR_POSITION = 6  # 0-indexed, splitting the file name on "_"
 
     for file_path in excel_files:
+        # Filename-embedded contractor name — independent of whether the
+        # sheet/column read below succeeds, so a file with a broken sheet
+        # still contributes this check.
+        name_parts = file_path.name.split("_")
+        if len(name_parts) > FILENAME_CONTRACTOR_POSITION:
+            filename_value = name_parts[FILENAME_CONTRACTOR_POSITION]
+            if filename_value.strip():
+                result[filename_value]["sources"].add("template")
+                result[filename_value]["files"].add(file_path.name)
+
         try:
             xl = pd.ExcelFile(file_path)
         except Exception as e:
@@ -194,9 +272,11 @@ def get_template_contractor_names() -> dict[str, set[str]]:
             value = str(raw_value)
             if not value.strip():
                 continue
-            sources[value].add("template")
+            result[value]["sources"].add("template")
+            result[value]["files"].add(file_path.name)
 
-    return sources
+
+    return dict(result)
 
 
 # ---------------------------------------------------------------------------
@@ -237,16 +317,27 @@ def get_existing_contractor_names(gc: gspread.Client):
 # ---------------------------------------------------------------------------
 
 def main():
-    print("Gathering customer_name values from DuckDB (base + credit)...")
-    combined: dict[str, set[str]] = defaultdict(set)
+    # globals().get(...) rather than referencing LOOKBACK_DAYS directly, so
+    # commenting that config line out entirely (to disable the limit) doesn't
+    # raise a NameError — it just resolves to None here.
+    lookback_days = globals().get("LOOKBACK_DAYS")
 
-    for value, srcs in get_duckdb_customer_names().items():
-        combined[value] |= srcs
+    if lookback_days is not None:
+        print(f"Gathering customer_name values from DuckDB (base + credit), "
+              f"limited to files processed in the last {lookback_days} day(s)...")
+    else:
+        print("Gathering customer_name values from DuckDB (base + credit), no date limit...")
+    combined: dict[str, dict] = defaultdict(lambda: {"sources": set(), "files": set()})
+
+    for value, info in get_duckdb_customer_names(lookback_days).items():
+        combined[value]["sources"] |= info["sources"]
+        combined[value]["files"] |= info["files"]
     print(f"  {len(combined)} unique value(s) so far (base + credit)")
 
     print("\nGathering contractor_name values from Template files...")
-    for value, srcs in get_template_contractor_names().items():
-        combined[value] |= srcs
+    for value, info in get_template_contractor_names().items():
+        combined[value]["sources"] |= info["sources"]
+        combined[value]["files"] |= info["files"]
     print(f"  {len(combined)} unique value(s) total (base + credit + template)")
 
     print("\nAuthenticating with Google Sheets...")
@@ -268,8 +359,11 @@ def main():
     updates = []
     for offset, value in enumerate(missing):
         row_num = next_row + offset
-        source_label = "/".join(sorted(combined[value]))
+        source_label = "/".join(sorted(combined[value]["sources"]))
+        file_list = ", ".join(sorted(combined[value]["files"]))
         note = f"added {today} from {source_label} file data"
+        if file_list:
+            note += f" ({file_list})"
         updates.append({
             "range": f"{CONTRACTORS_NAME_COLUMN_LETTER}{row_num}",
             "values": [[value]],
@@ -293,7 +387,7 @@ def main():
 
     print("\nDone. New values added:")
     for value in missing:
-        print(f"  + {value!r}  ({'/'.join(sorted(combined[value]))})")
+        print(f"  + {value!r}  ({'/'.join(sorted(combined[value]['sources']))})")
 
 
 if __name__ == "__main__":
