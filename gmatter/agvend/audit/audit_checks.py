@@ -2,7 +2,7 @@
 """
 CALC earnings + near-miss report.
 
-For each request JSON in the input folder:
+For each request JSON in the input folders:
   1. POST it to /calculations and GET /programs for the same participant/supplier
   2. Join potential_earnings back to every request transaction by transaction_id
   3. Check every transaction against every program it did NOT earn on, and flag:
@@ -21,24 +21,26 @@ For each request JSON in the input folder:
      Transaction types that never earn (booking, retailer_orders_from_distribution
      by default) are not checked. Gate definitions and zero-rate stacked sku_sets
      never pay, so they never produce flags either.
-  4. Write one Excel workbook per retailer (participant_key): a Summary sheet by
-     supplier and program, then one sheet each for Earned, Missed date, Product
-     family, Transaction type, Eligible did not earn, and No match, each grouped
-     by program supplier
+  4. Write one Excel workbook per retailer (participant_key): an Executive summary,
+     a Summary by supplier, program and offer, then one sheet each for Earned,
+     Missed date, Product family, Transaction type, Eligible did not earn, and No match
 
-Input filename convention: {participant_key}__{program_supplier_key}.json
-  e.g. ag_vend_austin_tx_000__bayer.json
+Input layout: one folder per participant_key, one file per program supplier:
+  input/{participant_key}/{program_supplier_key}_{time_frame}_<anything>.json
+  e.g. input/cpi_hastings_ne_073/basf_2027_invoices_and_purchase_invoices.json
+The supplier key is everything before the first _YYYY_, and YYYY is the time_frame.
 
-Both API calls send program_supplier_key and time_frame as params and the
+API calls send program_supplier_key and time_frame as params and the
 participant key as the `participant-key` header.
 
 Usage:
   python earnings_report.py                    # call the API for every input file
-  python earnings_report.py --reuse-responses  # rebuild CSVs from saved responses, no API calls
+  python earnings_report.py --reuse-responses  # rebuild the workbook from saved responses, no API calls
   python earnings_report.py --config other.json
 """
 import argparse
 import json
+import re
 import os
 import sys
 from datetime import date, timedelta
@@ -48,14 +50,14 @@ import requests
 
 try:
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 except ImportError:
     sys.exit("openpyxl is required for the Excel output. Install it with: pip install openpyxl")
 
 TXN_FIELDS = ["transaction_id", "transaction_type", "sku_key", "uom_key",
               "quantity", "amount", "invoice_date"]
-REQUIRED_CONFIG = ("base_url", "time_frame", "input_dir", "output_dir")
+REQUIRED_CONFIG = ("base_url", "input_dir", "output_dir")
 
 FLAG_DATE = "missed incentive date"
 FLAG_TYPE = "different transaction type"
@@ -67,20 +69,27 @@ DEFAULT_NON_EARNING_TYPES = ["booking", "retailer_orders_from_distribution"]
 # ---------------------------------------------------------------- config / API
 
 def load_config(path):
+    """Read config.json. Lines starting with // are treated as comments."""
     with open(path) as f:
-        cfg = json.load(f)
+        lines = [ln for ln in f if not ln.lstrip().startswith("//")]
+    try:
+        cfg = json.loads("".join(lines))
+    except json.JSONDecodeError as e:
+        sys.exit(f"config.json isn't valid JSON ({e}). Check for a trailing comma "
+                 f"before a commented-out line or the closing brace.")
     missing = [k for k in REQUIRED_CONFIG if k not in cfg]
     if missing:
         sys.exit(f"Config is missing: {', '.join(missing)}")
     return cfg
 
 
+FILENAME_RE = re.compile(r"^(?P<supplier>.+?)_(?P<year>\d{4})(?:_.*)?$")
+
+
 def parse_filename(path):
-    """ag_vend_austin_tx_000__bayer.json -> ('ag_vend_austin_tx_000', 'bayer')"""
-    parts = path.stem.split("__", 1)
-    if len(parts) != 2 or not all(parts):
-        return None
-    return parts[0], parts[1]
+    """basf_2027_invoices_and_purchase_invoices.json -> ('basf', '2027')"""
+    m = FILENAME_RE.match(path.stem)
+    return (m["supplier"], m["year"]) if m else None
 
 
 def build_headers(cfg, participant):
@@ -165,7 +174,7 @@ def earnings_by_transaction(response):
 
 
 def failed_qualifications(calc_response, programs_response):
-    """{(program_key, offer_key): "Missed: <label> (actual x vs target y); ..."} from qualification_results.
+    """{(program_key, offer_key): [{text, label, actual, target, difference}]} for failed qualifications.
 
     Waived qualifications count as met. Labels come from the program and offer
     qualifications in GET /programs, falling back to the qualification key.
@@ -196,9 +205,10 @@ def failed_qualifications(calc_response, programs_response):
             nums = ""
         text = f"Missed: {label}{nums}"
         existing = notes.setdefault((pk, ok), [])
-        if text not in existing:
-            existing.append(text)
-    return {k: "; ".join(v) for k, v in notes.items()}
+        if all(text != e["text"] for e in existing):
+            existing.append({"text": text, "label": label, "actual": r.get("actual"),
+                             "target": r.get("target"), "difference": r.get("difference")})
+    return notes
 
 
 # ---------------------------------------------------------------- program rules
@@ -266,6 +276,42 @@ def offer_rules(offer):
     return rules
 
 
+def offer_rate_text(offer):
+    """Readable earning rate for an offer: "4%", "$25.00/unit", "0.5%-2% (stepped)"."""
+    strategy = offer.get("strategy_key")
+    rates = []
+    if strategy in ("standard", "gated"):
+        for inc in offer.get("incentives") or []:
+            rates += inc.get("rates") or []
+    elif strategy == "stacked":
+        for sset in (offer.get("incentive") or {}).get("sku_sets") or []:
+            rates += [r for r in sset.get("rates") or [] if (r.get("rate") or 0) > 0]
+    elif strategy == "stepped":
+        rates += (offer.get("incentive") or {}).get("rates") or []
+
+    def fmt(rate, measure):
+        if measure == "percent":
+            return f"{rate:g}%"
+        if measure == "dollars":
+            return f"${rate:,.2f}/unit"
+        return f"{rate:g} {measure or ''}".strip()
+
+    by_measure = {}
+    for r in rates:
+        if r.get("rate") is not None:
+            by_measure.setdefault(r.get("measure"), set()).add(float(r["rate"]))
+    parts = []
+    for measure, vals in by_measure.items():
+        lo, hi = min(vals), max(vals)
+        parts.append(fmt(lo, measure) if lo == hi else f"{fmt(lo, measure)}-{fmt(hi, measure)}")
+    text = ", ".join(parts)
+    if text and strategy == "stepped":
+        text += " (stepped)"
+    elif text and strategy == "gated":
+        text += " (up to ordered qty)"
+    return text
+
+
 def load_offers(programs_response):
     """[{program_key, offer_key, strategy, qualifier, rules}], plus warnings for unreadable offers."""
     offers, warnings = [], []
@@ -278,8 +324,10 @@ def load_offers(programs_response):
                 continue
             offers.append({
                 "program_key": program.get("key", ""),
+                "program_label": program.get("program_name_label") or program.get("key", ""),
                 "offer_key": offer.get("key", ""),
                 "strategy": offer.get("strategy_key", ""),
+                "rate_text": offer_rate_text(offer),
                 "qualifier": offer.get("qualifier") or program.get("qualifier") or "",
                 "rules": rules,
             })
@@ -322,7 +370,10 @@ def review_transaction(txn, earned, offers, cfg):
     """All review dicts for one transaction, one per offer + flag type.
 
     A transaction earns at most once per program, so once it has earned on any
-    offer in a program, the other offers in that program are not checked.
+    offer in a program, the other offers in that program are not checked. The
+    same goes for a program where it fully matches an offer (right SKU, type and
+    dates) but didn't earn, usually a missed qualification: it belongs to that
+    offer, so near misses on the program's other offers would be misleading.
     """
     earned_programs = {o["program_key"] for o in earned}
     # Bookings and orders never earn on their own (they only satisfy a gate or a
@@ -332,21 +383,34 @@ def review_transaction(txn, earned, offers, cfg):
         return []
     window = cfg.get("near_miss_days", 30)
     flag_eligible = cfg.get("flag_eligible_not_earned", True)
-    reviews = []
+
+    # Pass 1: check every offer, and note programs where an earning rule fully matched.
+    checked, matched_programs = [], set()
     for offer in offers:
         if offer["program_key"] in earned_programs:
             continue
-        ident = {"program_key": offer["program_key"], "offer_key": offer["offer_key"]}
         results = [check_rule(txn, rule, window) for rule in offer["rules"]]
         matched = [rule for rule, res in zip(offer["rules"], results) if res and res["flag"] == "match"]
+        if any(r["role"] == "earning" for r in matched):
+            matched_programs.add(offer["program_key"])
+        checked.append((offer, results, matched))
+
+    # Pass 2: build review lines.
+    reviews = []
+    for offer, results, matched in checked:
+        ident = {"program_key": offer["program_key"], "offer_key": offer["offer_key"],
+                 "program_label": offer.get("program_label") or offer["program_key"]}
         if matched:
             # Fully matches this offer: expected for gate/stack pieces; otherwise worth a look.
             earning = [r for r in matched if r["role"] == "earning"]
             if flag_eligible and earning:
                 reviews.append({**ident, "flag": FLAG_ELIGIBLE, "qualifier": offer["qualifier"],
+                                "rate_text": offer.get("rate_text", ""),
                                 "period_key": earning[0]["period_key"],
                                 "period_start": earning[0]["start"], "period_end": earning[0]["end"]})
             continue
+        if offer["program_key"] in matched_programs:
+            continue   # belongs to another offer in this program; not a near miss here
         # Only earning components produce near-miss flags. Gate definitions and
         # zero-rate stack requirements never pay, so they only suppress flags above.
         seen = set()
@@ -447,7 +511,9 @@ def build_records(txns, earnings, offers, cfg, supplier, seller_types, qual_note
         problem = None if earned else seller_problem(t, supplier, seller_types)
         reviews = [] if problem else review_transaction(t, earned, offers, cfg)
         for rv in reviews:
-            rv["qualification_note"] = (qual_notes or {}).get((rv["program_key"], rv["offer_key"]), "")
+            fails = (qual_notes or {}).get((rv["program_key"], rv["offer_key"]), [])
+            rv["qualification_failures"] = fails
+            rv["qualification_note"] = "; ".join(f["text"] for f in fails)
         if not earned and not reviews:
             t["no_match_reason"], t["no_match_detail"] = problem or no_match_reason(t, offers, cfg)
         records.append((t, earned, reviews))
@@ -461,6 +527,7 @@ F_BASE = Font(name=FONT_NAME, size=10)
 F_BOLD = Font(name=FONT_NAME, size=10, bold=True)
 F_SHEET_TITLE = Font(name=FONT_NAME, size=14, bold=True)
 F_SECTION = Font(name=FONT_NAME, size=11, bold=True, color="FFFFFF")
+F_NOTE = Font(name=FONT_NAME, size=10, italic=True, color="595959")
 F_GROUP = Font(name=FONT_NAME, size=10, bold=True, color="305496")
 FILL_SECTION = PatternFill("solid", fgColor="305496")
 FILL_HEADER = PatternFill("solid", fgColor="D9E1F2")
@@ -536,7 +603,8 @@ def _autosize(ws, max_width=60):
     widths = {}
     for row in ws.iter_rows():
         for cell in row:
-            if cell.value is None or cell.font == F_SECTION or cell.font == F_SHEET_TITLE:
+            # skip titles, section bars (larger fonts) and italic notes; they can overflow
+            if cell.value is None or cell.font.i or (cell.font.sz or 10) > 10:
                 continue
             v = cell.value
             n = 10 if hasattr(v, "year") else len(str(v))
@@ -556,101 +624,84 @@ def _sheet_name(name, used):
     return clean
 
 
-def _earned_lines(records):
-    lines = [(o["program_key"], o["offer_key"], txn, o["incentive_amount"])
-             for txn, earned, _ in records for o in earned]
-    lines.sort(key=lambda x: (x[0], x[1], str(x[2]["transaction_id"])))
-    return lines
+def _finish_table(ws, header_row, last_row, ncols):
+    """Freeze below the header and switch on filters for the whole table."""
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+    ws.auto_filter.ref = f"A{header_row}:{get_column_letter(ncols)}{max(last_row, header_row)}"
+    _autosize(ws)
 
 
 def _write_earned_sheet(ws, participant, suppliers):
-    """Earned transactions, grouped by supplier, then program and offer, with totals."""
+    """One continuous, filterable table: one line per earned transaction + offer."""
     txn_headers = [h for h, _, _ in TXN_COLS]
     txn_formats = [f for _, _, f in TXN_COLS]
-    headers = ["Program", "Offer", *txn_headers, "Earned amount"]
+    headers = ["Program supplier", "Program", "Offer", *txn_headers, "Earned amount"]
+    formats = [None, None, None, *txn_formats, FMT_MONEY]
     earn_col = len(headers)
     L = get_column_letter(earn_col)
-    _put(ws, 1, 1, f"Earned | {participant}", font=F_SHEET_TITLE)
-    row = _header(ws, 3, headers)
-    ws.freeze_panes = ws.cell(row=row, column=1)
-    sheet_first = row
 
+    lines = []
     for supplier in sorted(suppliers):
-        lines = _earned_lines(suppliers[supplier])
-        row = _section_title(ws, row, f"{supplier} ({len(lines)} transaction-offer lines)", len(headers))
-        supplier_first = group_first = row
-        if not lines:
-            _put(ws, row, 1, "None")
-            row += 2
-            continue
-        for i, (program, offer, txn, amount) in enumerate(lines):
-            row = _rows(ws, row, [[program, offer, *_txn_values(txn), round(amount, 2)]],
-                        [None, None, *txn_formats, FMT_MONEY])
-            nxt = lines[i + 1] if i + 1 < len(lines) else None
-            if nxt is None or (nxt[0], nxt[1]) != (program, offer):
-                for c in range(1, earn_col + 1):
-                    _put(ws, row, c, None, fill=FILL_TOTAL)
-                _put(ws, row, 2, "Offer total", font=F_BOLD, fill=FILL_TOTAL)
-                _put(ws, row, earn_col, f"=SUBTOTAL(9,{L}{group_first}:{L}{row - 1})",
-                     font=F_BOLD, fmt=FMT_MONEY, fill=FILL_TOTAL)
-                row += 1
-                group_first = row
-        _put(ws, row, 1, f"{supplier} total", font=F_BOLD)
-        _put(ws, row, earn_col, f"=SUBTOTAL(9,{L}{supplier_first}:{L}{row - 1})",
-             font=F_BOLD, fmt=FMT_MONEY)
-        row += 2
+        for txn, earned, _ in suppliers[supplier]:
+            for o in earned:
+                lines.append([supplier, o["program_key"], o["offer_key"], *_txn_values(txn),
+                              round(o["incentive_amount"], 2)])
+    lines.sort(key=lambda r: (r[0], r[1], r[2], str(r[3])))
 
-    _put(ws, row, 1, "Grand total", font=F_BOLD)
-    _put(ws, row, earn_col, f"=SUBTOTAL(9,{L}{sheet_first}:{L}{row - 1})", font=F_BOLD, fmt=FMT_MONEY)
-    _autosize(ws)
+    _put(ws, 1, 1, f"Earned | {participant}", font=F_SHEET_TITLE)
+    header_row = 4
+    first, last = header_row + 1, header_row + max(len(lines), 1)
+    _put(ws, 2, earn_col - 1, "Total earned (filtered rows)", font=F_BOLD)
+    _put(ws, 2, earn_col, f"=SUBTOTAL(9,{L}{first}:{L}{last})", font=F_BOLD, fmt=FMT_MONEY)
+    _header(ws, header_row, headers)
+    end = _rows(ws, first, lines, formats) - 1
+    _finish_table(ws, header_row, end, len(headers))
 
 
 def _write_review_sheet(ws, title, participant, suppliers, flag, extra_headers, extra_formats, extra_values):
-    """One near-miss reason, grouped by supplier, one line per transaction + offer."""
+    """One near-miss reason as a continuous, filterable table."""
     txn_headers = [h for h, _, _ in TXN_COLS]
     txn_formats = [f for _, _, f in TXN_COLS]
-    headers = ["Program", "Offer", *txn_headers, *extra_headers]
-    _put(ws, 1, 1, f"{title} | {participant}", font=F_SHEET_TITLE)
-    row = _header(ws, 3, headers)
-    ws.freeze_panes = ws.cell(row=row, column=1)
+    headers = ["Program supplier", "Program", "Offer", *txn_headers, *extra_headers]
+    formats = [None, None, None, *txn_formats, *extra_formats]
+
+    lines = []
     for supplier in sorted(suppliers):
-        items = [(rv, txn) for txn, _, reviews in suppliers[supplier] for rv in reviews if rv["flag"] == flag]
-        items.sort(key=lambda x: (x[0]["program_key"], x[0]["offer_key"], str(x[1]["transaction_id"])))
-        row = _section_title(ws, row, f"{supplier} ({len(items)})", len(headers))
-        if not items:
-            _put(ws, row, 1, "None")
-            row += 1
-        else:
-            row = _rows(ws, row,
-                        [[rv["program_key"], rv["offer_key"], *_txn_values(txn), *extra_values(rv)]
-                         for rv, txn in items],
-                        [None, None, *txn_formats, *extra_formats])
-        row += 1
-    _autosize(ws)
+        for txn, _, reviews in suppliers[supplier]:
+            for rv in reviews:
+                if rv["flag"] == flag:
+                    lines.append([supplier, rv["program_key"], rv["offer_key"], *_txn_values(txn),
+                                  *extra_values(rv)])
+    lines.sort(key=lambda r: (r[0], r[1], r[2], str(r[3])))
+
+    _put(ws, 1, 1, f"{title} | {participant} ({len(lines)})", font=F_SHEET_TITLE)
+    header_row = 3
+    _header(ws, header_row, headers)
+    end = _rows(ws, header_row + 1, lines, formats) - 1
+    _finish_table(ws, header_row, end, len(headers))
 
 
 def _write_no_match_sheet(ws, participant, suppliers):
-    """Transactions that didn't earn and weren't a near miss on anything."""
+    """Transactions that didn't earn and weren't a near miss, with the reason."""
     txn_headers = [h for h, _, _ in TXN_COLS]
     txn_formats = [f for _, _, f in TXN_COLS]
-    headers = [*txn_headers, "Reason", "Detail"]
-    _put(ws, 1, 1, f"No match | {participant}", font=F_SHEET_TITLE)
-    row = _header(ws, 3, headers)
-    ws.freeze_panes = ws.cell(row=row, column=1)
+    headers = ["Program supplier", *txn_headers, "Reason", "Detail"]
+    formats = [None, *txn_formats, None, None]
+
+    lines = []
     for supplier in sorted(suppliers):
-        txns = [t for t, earned, reviews in suppliers[supplier] if not earned and not reviews]
-        txns.sort(key=lambda t: (t.get("no_match_reason", ""), str(t["transaction_id"])))
-        row = _section_title(ws, row, f"{supplier} ({len(txns)})", len(headers))
-        if not txns:
-            _put(ws, row, 1, "None")
-            row += 1
-        else:
-            row = _rows(ws, row,
-                        [[*_txn_values(t), t.get("no_match_reason", ""), t.get("no_match_detail", "")]
-                         for t in txns],
-                        [*txn_formats, None, None])
-        row += 1
-    _autosize(ws)
+        for t, earned, reviews in suppliers[supplier]:
+            if not earned and not reviews:
+                lines.append([supplier, *_txn_values(t), t.get("no_match_reason", ""),
+                              t.get("no_match_detail", "")])
+    reason_col = len(headers) - 2
+    lines.sort(key=lambda r: (r[0], r[reason_col], str(r[1])))
+
+    _put(ws, 1, 1, f"No match | {participant} ({len(lines)})", font=F_SHEET_TITLE)
+    header_row = 3
+    _header(ws, header_row, headers)
+    end = _rows(ws, header_row + 1, lines, formats) - 1
+    _finish_table(ws, header_row, end, len(headers))
 
 
 REVIEW_SHEETS = [
@@ -708,10 +759,227 @@ def _bucket_values(b):
             len(b["family"]), len(b["type"]), len(b["eligible"])]
 
 
+def _amount(txn):
+    try:
+        return float(txn.get("amount") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _exec_section(ws, row, title, note, headers, formats, lines):
+    width = len(headers)
+    row = _section_title(ws, row, title, width)
+    _put(ws, row, 1, note, font=F_NOTE)
+    row = _header(ws, row + 1, headers)
+    if not lines:
+        _put(ws, row, 1, "None")
+        return row + 2
+    return _rows(ws, row, lines, formats) + 1
+
+
+SIDE_GROUP = Side(style="thin", color="8EA9DB")
+FILL_PAIR = PatternFill("solid", fgColor="F3F6FB")
+CENTER = Alignment(horizontal="center", vertical="center")
+
+
+def _date_section(ws, row, buckets, lines):
+    """Missed-date table with a three-level header: Early/Late, bucket, then Txns / $.
+
+    Each bucket's two columns share a merged header, a left border, and
+    alternating light shading so the count and dollars read as one group.
+    """
+    n_pairs = 2 * len(buckets) + 1           # early buckets, late buckets, total
+    width = 2 + 2 * n_pairs
+    row = _section_title(ws, row, "Missed the incentive dates", width)
+    _put(ws, row, 1, "Right product and transaction type, but invoiced just before the program started "
+                     "(early) or just after it ended (late).", font=F_NOTE)
+    top, mid, sub = row + 1, row + 2, row + 3
+
+    def head(r, c, value, span=1):
+        for cc in range(c, c + span):
+            cell = _put(ws, r, cc, None, font=F_BOLD, fill=FILL_HEADER)
+            cell.alignment = CENTER
+        _put(ws, r, c, value, font=F_BOLD, fill=FILL_HEADER).alignment = CENTER
+        if span > 1:
+            ws.merge_cells(start_row=r, start_column=c, end_row=r, end_column=c + span - 1)
+
+    for c, name in ((1, "Program supplier"), (2, "Program")):
+        head(top, c, name)
+        ws.merge_cells(start_row=top, start_column=c, end_row=sub, end_column=c)
+        ws.cell(row=top, column=c).alignment = Alignment(vertical="bottom")
+
+    pair_cols = []                            # first column of each pair
+    col = 3
+    for title in ("Early (before start)", "Late (after end)"):
+        head(top, col, title, span=2 * len(buckets))
+        for _, _, label in buckets:
+            head(mid, col, label, span=2)
+            head(sub, col, "Txns")
+            head(sub, col + 1, "$")
+            pair_cols.append(col)
+            col += 2
+    # "Total" spans two rows and two columns: style every cell, then merge once
+    # (merging the same cells twice makes Excel report the file as damaged).
+    for r in (top, mid):
+        for cc in (col, col + 1):
+            _put(ws, r, cc, None, font=F_BOLD, fill=FILL_HEADER).alignment = CENTER
+    _put(ws, top, col, "Total", font=F_BOLD, fill=FILL_HEADER).alignment = CENTER
+    ws.merge_cells(start_row=top, start_column=col, end_row=mid, end_column=col + 1)
+    head(sub, col, "Txns")
+    head(sub, col + 1, "$")
+    pair_cols.append(col)
+
+    row = sub + 1
+    if not lines:
+        _put(ws, row, 1, "None")
+        row += 1
+    else:
+        formats = [None, None] + [FMT_COUNT, FMT_MONEY] * n_pairs
+        row = _rows(ws, row, lines, formats)
+
+    for i, c in enumerate(pair_cols):
+        shade = FILL_PAIR if i % 2 == 0 else None
+        for r in range(mid, row):
+            for cc in (c, c + 1):
+                cell = ws.cell(row=r, column=cc)
+                if r > sub and shade:
+                    cell.fill = shade
+            ws.cell(row=r, column=c).border = Border(left=SIDE_GROUP)
+    for r in range(top, row):
+        ws.cell(row=r, column=pair_cols[0]).border = Border(left=Side(style="medium", color="305496"))
+        ws.cell(row=r, column=pair_cols[len(buckets)]).border = Border(left=Side(style="medium", color="305496"))
+        ws.cell(row=r, column=pair_cols[-1]).border = Border(left=Side(style="medium", color="305496"))
+    return row + 1
+
+
+def _write_executive_sheet(ws, participant, suppliers, cfg):
+    window = cfg.get("near_miss_days", 30)
+    # Upper edge of each bucket; the last bucket runs to the near-miss window.
+    edges = [e for e in cfg.get("exec_date_bucket_edges", [7, 14, 24]) if e < window] + [window]
+    buckets, low = [], 1
+    for e in edges:
+        buckets.append((low, e, f"{low}-{e} days"))
+        low = e + 1
+
+    def bucket_of(days):
+        return next(label for lo, hi, label in buckets if lo <= days <= hi)
+    _put(ws, 1, 1, f"Executive summary | {participant}", font=F_SHEET_TITLE)
+    _put(ws, 2, 1, f"time_frame {cfg['time_frame']}. Amounts are net of returns. Missed date, product family "
+                   f"and transaction type leave out anything that also missed a qualification.", font=F_NOTE)
+    row = 4
+
+    def reviews(flag, qualified):
+        """(supplier, review, txn) for a flag; qualified=True drops failed qualifications, False keeps only them."""
+        for supplier in sorted(suppliers):
+            for txn, _, rvs in suppliers[supplier]:
+                for rv in rvs:
+                    if rv["flag"] == flag and bool(rv.get("qualification_failures")) != qualified:
+                        yield supplier, rv, txn
+
+    # ---- 1. Missed date, split early / late and by distance
+    cols = [(d, label) for d in ("before start", "after end") for _, _, label in buckets]
+    labels = {}  # program_key -> program name label (rows are keyed by key, shown by label)
+    agg = {}
+    for supplier, rv, txn in reviews(FLAG_DATE, qualified=True):
+        key = (supplier, rv["program_key"])
+        labels[rv["program_key"]] = rv["program_label"]
+        a = agg.setdefault(key, {c: [0, 0.0] for c in cols})
+        c = (rv["direction"], bucket_of(rv["days_off"]))
+        a[c][0] += 1
+        a[c][1] += _amount(txn)
+    lines = []
+    for (supplier, program), a in sorted(agg.items(), key=lambda kv: (kv[0][0], labels[kv[0][1]], kv[0][1])):
+        vals = []
+        for c in cols:
+            vals += [a[c][0], round(a[c][1], 2)]
+        lines.append([supplier, labels[program], *vals,
+                      sum(a[c][0] for c in cols), round(sum(a[c][1] for c in cols), 2)])
+    row = _date_section(ws, row, buckets, lines)
+    date_end = row
+
+    # ---- 2. Product family
+    agg = {}
+    for supplier, rv, txn in reviews(FLAG_FAMILY, qualified=True):
+        labels[rv["program_key"]] = rv["program_label"]
+        key = (supplier, rv["program_key"], txn["sku_key"], rv["closest_sku"])
+        a = agg.setdefault(key, [0, 0.0])
+        a[0] += 1
+        a[1] += _amount(txn)
+    lines = sorted([[k[0], labels[k[1]], *k[2:], n, round(amt, 2)] for k, (n, amt) in agg.items()],
+                   key=lambda r: tuple(str(x) for x in r))
+    row = _exec_section(ws, row, "Similar products that aren't in the program",
+                        "You bought a product from the same family as one the program pays on, but this exact "
+                        "SKU isn't configured to earn. Worth confirming if you expected it to.",
+                        ["Program supplier", "Program", "SKU purchased", "Closest SKU the program pays on",
+                         "Transactions", "Amount ($)"],
+                        [None, None, None, None, FMT_COUNT, FMT_MONEY], lines)
+
+    # ---- 3. Transaction type
+    agg = {}
+    for supplier, rv, txn in reviews(FLAG_TYPE, qualified=True):
+        labels[rv["program_key"]] = rv["program_label"]
+        key = (supplier, rv["program_key"], txn["transaction_type"], rv["required_type"])
+        a = agg.setdefault(key, [0, 0.0])
+        a[0] += 1
+        a[1] += _amount(txn)
+    lines = sorted([[k[0], labels[k[1]], *k[2:], n, round(amt, 2)] for k, (n, amt) in agg.items()],
+                   key=lambda r: tuple(str(x) for x in r))
+    row = _exec_section(ws, row, "Right product and dates, different transaction type",
+                        "These transactions were for program products within the program dates, but were "
+                        "reported as a transaction type the program doesn't pay on.",
+                        ["Program supplier", "Program", "Transaction type reported", "Program pays on",
+                         "Transactions", "Amount ($)"],
+                        [None, None, None, None, FMT_COUNT, FMT_MONEY], lines)
+
+    # ---- 4. Eligible, waiting on a qualification
+    agg = {}
+    for supplier, rv, txn in reviews(FLAG_ELIGIBLE, qualified=False):
+        for f in rv["qualification_failures"]:
+            key = (supplier, rv["program_key"], rv["offer_key"], f["label"])
+            labels[rv["program_key"]] = rv["program_label"]
+            a = agg.setdefault(key, {"n": 0, "amt": 0.0, "rate": rv.get("rate_text", ""), "f": f})
+            a["n"] += 1
+            a["amt"] += _amount(txn)
+    lines = []
+    for (supplier, program, offer, label), a in sorted(agg.items(), key=lambda kv: (kv[0][0], labels[kv[0][1]], kv[0][2], kv[0][3])):
+        f = a["f"]
+        try:
+            needed = abs(float(f["difference"])) if f.get("difference") is not None \
+                else float(f["target"]) - float(f["actual"])
+        except (TypeError, ValueError):
+            needed = None
+        lines.append([supplier, labels[program], offer, label, a["n"], round(a["amt"], 2), a["rate"],
+                      f.get("actual"), f.get("target"), needed])
+    _exec_section(ws, row, "Ready to earn once a qualification is met",
+                  "Right product, dates and transaction type. These should start earning once the "
+                  "qualification is met. Actual, target and still needed are in the qualification's own "
+                  "units (dollars, units, percent or index). An offer missing two qualifications shows on two rows.",
+                  ["Program supplier", "Program", "Offer", "Qualification missed", "Transactions",
+                   "Amount ($)", "Program rate", "Actual", "Target", "Still needed"],
+                  [None, None, None, None, FMT_COUNT, FMT_MONEY, None, "#,##0.00", "#,##0.00", "#,##0.00"],
+                  lines)
+    # Columns A-B fit their content; C onward share one width so the Txns / $ pairs
+    # line up, and long text in the lower sections wraps instead of widening them.
+    _autosize(ws)
+    for c in range(3, ws.max_column + 1):
+        ws.column_dimensions[get_column_letter(c)].width = 20
+    wrap = Alignment(wrap_text=True, vertical="top")
+    for r in range(date_end, ws.max_row + 1):
+        for c in range(3, ws.max_column + 1):
+            cell = ws.cell(row=r, column=c)
+            if isinstance(cell.value, str) and cell.font.sz in (None, 10) and not cell.font.i:
+                cell.alignment = wrap
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+
 def write_workbook(path, participant, suppliers, cfg):
     wb = Workbook()
-    ws = wb.active
-    ws.title = "Summary"
+    _write_executive_sheet(wb.active, participant, suppliers, cfg)
+    wb.active.title = "Executive summary"
+    ws = wb.create_sheet("Summary")
 
     ALL = "All offers"
     headers = ["Program supplier", "Program", "Offer", "Earning transactions", "Total earnings",
@@ -774,61 +1042,63 @@ def write_workbook(path, participant, suppliers, cfg):
 
 # ---------------------------------------------------------------- main
 
-def process_file(cfg, path, out_dir, reuse):
-    """Call the APIs for one input file and return (participant, supplier, records)."""
+def process_file(cfg, path, participant, out_dir, reuse):
+    """Call the APIs for one input file and return (supplier, time_frame, records)."""
     keys = parse_filename(path)
     if not keys:
-        print(f"SKIP {path.name}: expected {{participant_key}}__{{program_supplier_key}}.json")
+        print(f"SKIP {participant}/{path.name}: expected {{program_supplier_key}}_{{YYYY}}_....json")
         return None
-    participant, supplier = keys
+    supplier, time_frame = keys
+    cfg = {**cfg, "time_frame": time_frame}     # the file's year drives every API call
+    label = f"{participant}/{path.name}"
 
     payload = json.loads(path.read_text())
     if payload.get("participant_key") and payload["participant_key"] != participant:
-        print(f"WARN {path.name}: participant_key in file is '{payload['participant_key']}'")
+        print(f"WARN {label}: participant_key in file is '{payload['participant_key']}'")
 
     try:
-        calc = get_or_load(cfg, reuse, out_dir / "responses" / path.name,
+        calc = get_or_load(cfg, reuse, out_dir / "responses" / participant / path.name,
                            "POST", "/calculations", participant, supplier, payload)
-        programs = get_or_load(cfg, reuse, out_dir / "programs" / path.name,
+        programs = get_or_load(cfg, reuse, out_dir / "programs" / participant / path.name,
                                "GET", "/programs", participant, supplier)
     except Exception as e:
-        print(f"FAIL {path.name}: {e}")
+        print(f"FAIL {label}: {e}")
         return None
 
     # Seller rule: only for distributor suppliers, only on the transaction types
     # /calculations/requirements says need a seller. Failures here don't stop the run.
     seller_types = set()
     try:
-        enrollments = get_or_load(cfg, reuse, out_dir / "enrollments" / f"{participant}.json",
+        enrollments = get_or_load(cfg, reuse, out_dir / "enrollments" / f"{participant}_{time_frame}.json",
                                   "GET", "/enrollments", participant, None)
         stype = supplier_type(enrollments, supplier)
         if stype is None:
-            print(f"WARN {path.name}: '{supplier}' isn't in /enrollments for {participant}; seller check skipped")
+            print(f"WARN {label}: '{supplier}' isn't in /enrollments for {participant}; seller check skipped")
         elif stype == "distributor":
-            requirements = get_or_load(cfg, reuse, out_dir / "requirements" / path.name,
+            requirements = get_or_load(cfg, reuse, out_dir / "requirements" / participant / path.name,
                                        "GET", "/calculations/requirements", participant, supplier)
             seller_types = seller_transaction_types(requirements)
     except Exception as e:
-        print(f"WARN {path.name}: seller check skipped ({e})")
+        print(f"WARN {label}: seller check skipped ({e})")
 
     txns = flatten_transactions(payload)
     earnings = earnings_by_transaction(calc)
     offers, warnings = load_offers(programs)
     for w in warnings:
-        print(f"WARN {path.name}: {w}")
+        print(f"WARN {label}: {w}")
 
     orphans = set(earnings) - {str(t["transaction_id"]) for t in txns}
     if orphans:
-        print(f"WARN {path.name}: {len(orphans)} earning transaction_id(s) not in request, "
+        print(f"WARN {label}: {len(orphans)} earning transaction_id(s) not in request, "
               f"e.g. {sorted(orphans)[:5]}")
 
     records = build_records(txns, earnings, offers, cfg, supplier, seller_types,
                             failed_qualifications(calc, programs))
     earned = sum(1 for _, e, _ in records if e)
     flagged = sum(1 for _, _, r in records if r)
-    print(f"OK   {path.name}: {len(records)} transactions, {earned} earned, {flagged} flagged for review, "
+    print(f"OK   {label}: {len(records)} transactions, {earned} earned, {flagged} flagged for review, "
           f"{len(offers)} offers checked")
-    return participant, supplier, records
+    return supplier, time_frame, records
 
 
 def main():
@@ -847,23 +1117,48 @@ def main():
     base = config_path.parent
     in_dir = base / cfg["input_dir"]
     out_dir = base / cfg["output_dir"]
-    for sub in ("responses", "programs", "enrollments", "requirements"):
-        (out_dir / sub).mkdir(parents=True, exist_ok=True)
+    folders = sorted(d for d in in_dir.iterdir() if d.is_dir()) if in_dir.is_dir() else []
+    if not folders:
+        sys.exit(f"No participant folders in {in_dir}. Expected input/{{participant_key}}/{{supplier}}_{{YYYY}}_....json")
 
-    files = sorted(in_dir.glob("*.json"))
-    if not files:
-        sys.exit(f"No .json files in {in_dir}")
-    by_participant = {}
-    for path in files:
-        result = process_file(cfg, path, out_dir, args.reuse_responses)
-        if result:
-            participant, supplier, records = result
-            by_participant.setdefault(participant, {})[supplier] = records
+    for participant_dir in folders:
+        participant = participant_dir.name
+        files = sorted(participant_dir.glob("*.json"))
+        if not files:
+            print(f"SKIP {participant}: no .json files")
+            continue
+        for sub in ("responses", "programs", "requirements"):
+            (out_dir / sub / participant).mkdir(parents=True, exist_ok=True)
+        (out_dir / "enrollments").mkdir(parents=True, exist_ok=True)
 
-    for participant, suppliers in sorted(by_participant.items()):
+        # One file per supplier per folder; if there are more, skip that supplier
+        # rather than guess which file is the right one.
+        by_supplier = {}
+        for path in files:
+            keys = parse_filename(path)
+            by_supplier.setdefault(keys[0] if keys else None, []).append(path)
+        dupes = {k: v for k, v in by_supplier.items() if k and len(v) > 1}
+        for supplier, paths in dupes.items():
+            print(f"SKIP {participant}: {len(paths)} files for '{supplier}' "
+                  f"({', '.join(p.name for p in paths)}); keep one and run again")
+
+        suppliers, years = {}, set()
+        for path in files:
+            keys = parse_filename(path)
+            if keys and keys[0] in dupes:
+                continue
+            result = process_file(cfg, path, participant, out_dir, args.reuse_responses)
+            if result:
+                supplier, time_frame, records = result
+                suppliers[supplier] = records
+                years.add(time_frame)
+        if not suppliers:
+            continue
+        if len(years) > 1:
+            print(f"WARN {participant}: files cover more than one year ({', '.join(sorted(years))})")
         wb_path = out_dir / f"{participant}.xlsx"
-        write_workbook(wb_path, participant, suppliers, cfg)
-        print(f"XLSX {participant}: {len(suppliers)} supplier(s), 7 sheets -> {wb_path}")
+        write_workbook(wb_path, participant, suppliers, {**cfg, "time_frame": ", ".join(sorted(years))})
+        print(f"XLSX {participant}: {len(suppliers)} supplier(s), 8 sheets -> {wb_path}")
 
 
 if __name__ == "__main__":

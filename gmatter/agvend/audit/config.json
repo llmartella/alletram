@@ -1,12 +1,11 @@
 {
   "base_url": "https://dev.calc.ag/",
-  "time_frame": 2026,
+  // "time_frame": 2026,   (not used: the year now comes from each input filename)
   "input_dir": "input",
   "output_dir": "output",
   "participant_header": "participant-key",
   "near_miss_days": 30,
   "flag_eligible_not_earned": true,
-  "suppress_date_miss_in_sequential_offers": true,
   "non_earning_transaction_types": ["booking", "retailer_orders_from_distribution"],
   "api_key": "TvJPHuzyDi3yuV",
   "auth_header": "x-api-key",
