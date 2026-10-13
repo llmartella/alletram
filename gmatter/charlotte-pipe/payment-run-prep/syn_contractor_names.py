@@ -79,7 +79,7 @@ DUCKDB_PATH = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/charlotte_pi
 # days (based on the trailing date embedded in each file's name — see
 # extract_processed_date() below). To include ALL historical data instead,
 # with no date limit, just comment out this whole line.
-LOOKBACK_DAYS = 90
+LOOKBACK_DAYS = 35
 
 TEMPLATES_DIR        = Path("/Users/lorimartella/Documents/gmatter/charlotte_pipe/templates")
 TEMPLATE_SHEET_NAME  = "REPORTED SALES DATA"
@@ -102,25 +102,37 @@ SCOPES   = ["https://www.googleapis.com/auth/spreadsheets"]  # read + write
 # Auth
 # ---------------------------------------------------------------------------
 
+# def get_credentials():
+#     creds = None
+#     token_path = BASE_DIR / "token_contractors.pkl"
+#     creds_path = BASE_DIR / "oauth_desktop_app.json"
+
+#     if token_path.exists():
+#         with open(token_path, "rb") as f:
+#             creds = pickle.load(f)
+
+#     if not creds or not creds.valid:
+#         if creds and creds.expired and creds.refresh_token:
+#             creds.refresh(Request())
+#         else:
+#             flow = InstalledAppFlow.from_client_secrets_file(str(creds_path), SCOPES)
+#             creds = flow.run_local_server(port=0)
+#         with open(token_path, "wb") as f:
+#             pickle.dump(creds, f)
+
+#     return creds
+
+# with the other imports
+from google.oauth2 import service_account
+
+# next to SCOPES
+SERVICE_ACCOUNT_FILE = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/cpf_python_scripts/service_account.json"
+
 def get_credentials():
-    creds = None
-    token_path = BASE_DIR / "token_contractors.pkl"
-    creds_path = BASE_DIR / "oauth_desktop_app.json"
-
-    if token_path.exists():
-        with open(token_path, "rb") as f:
-            creds = pickle.load(f)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(str(creds_path), SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(token_path, "wb") as f:
-            pickle.dump(creds, f)
-
-    return creds
+    """Service account auth: no browser login, no token file."""
+    return service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES
+    )
 
 
 # ---------------------------------------------------------------------------

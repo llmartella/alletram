@@ -17,6 +17,13 @@ Doing generate + run in one script (rather than two separate scripts and a
 shared output folder) means there's no path to get out of sync between them
 — whatever this run generates is exactly what this run then loads.
 
+Safe to rerun: before a file is reloaded, any rows already in the table for
+that file (matched on archive_file_name) are deleted in the same transaction
+as the reload, so fixing the mapping doc and rerunning replaces the earlier
+load rather than duplicating it — and if the reload fails, the earlier rows
+are kept. Only files generated in the current run are touched. Set
+REPLACE_EXISTING_ROWS = False below to append instead.
+
 Schema differences from transaction_mapping_base:
   - No contractor_number / contractor_name
   - Adds material_group_number (text)
@@ -52,10 +59,14 @@ from pathlib import Path
 import duckdb
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-from pipeline_helpers import find_month_folder, find_mapping_sheet_id, sanitize_ampersand_sheets
+from pipeline_helpers import (
+    find_month_folder, find_mapping_sheet_id, sanitize_ampersand_sheets,
+    get_sheet_names, resolve_sheet_name,
+)
 
 # ---------------------------------------------------------------------------
 # Default paths — edit these to match your environment
@@ -66,6 +77,15 @@ DEFAULT_DATA_DIR = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/credits
 # never get out of sync.
 DEFAULT_OUTPUT   = str(Path(__file__).parent / "sql_output_credit")
 DEFAULT_DB       = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/charlotte_pipe.duckdb"
+
+# When True, each file's existing rows in the target table (matched on
+# archive_file_name) are deleted right before that file is reloaded, so
+# rerunning after fixing the mapping doc replaces the earlier load instead of
+# duplicating it. The delete and the reload happen in one transaction: if the
+# reload fails, the file's earlier rows are left exactly as they were. Set to
+# False to only ever append.
+REPLACE_EXISTING_ROWS = True
+
 
 # Drive folder containing the YYYY-MM month folders, each holding this
 # month's base + credit mapping docs (searched recursively, since the docs
@@ -225,7 +245,9 @@ def generate_block(row: dict, file_path: str, row_num: int,
     # at the source (e.g. "L&amp;amp;S ..."), the single unescape pass in
     # load_mapping() only removes one layer. This second pass is a no-op
     # on an already-clean value, so it's safe either way.
-    sheet        = html.unescape(row.get("sheet_name", "").strip())
+    # main() passes the workbook's real sheet name here, so it's used as-is —
+    # trimming it would break sheets whose names end in a space.
+    sheet        = html.unescape(row.get("sheet_name", ""))
     data_range   = row.get("data_range", "").strip()
     header_range = row.get("header_range", "").strip()
     use_header   = row.get("use_header", "TRUE").strip().upper() not in ("FALSE","0","NO","F")
@@ -439,27 +461,39 @@ SCOPES          = [
 ]
 
 
-def get_credentials() -> Credentials:
-    creds      = None
-    # Scoped to this script specifically so it never collides with
-    # base_mapping_qc.py's cached token if both live in the same folder.
-    token_path = BASE_DIR / "token_credit.pkl"
-    creds_path = BASE_DIR / "oauth_desktop_app.json"
+# Service account key used for Sheets/Drive access.
+SERVICE_ACCOUNT_FILE = "/Users/lorimartella/Documents/gmatter/charlotte_pipe/cpf_python_scripts/service_account.json"
 
-    if token_path.exists():
-        with open(token_path, "rb") as f:
-            creds = pickle.load(f)
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow  = InstalledAppFlow.from_client_secrets_file(str(creds_path), SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(token_path, "wb") as f:
-            pickle.dump(creds, f)
+def get_credentials():
+    """Service account auth: no browser login, no token file."""
+    return service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES
+    )
 
-    return creds
+
+# ---- Previous OAuth version, kept for reference ----
+# def get_credentials() -> Credentials:
+#     creds      = None
+#     # Scoped to this script specifically so it never collides with
+#     # base_mapping_qc.py's cached token if both live in the same folder.
+#     token_path = BASE_DIR / "token_credit.pkl"
+#     creds_path = BASE_DIR / "oauth_desktop_app.json"
+#
+#     if token_path.exists():
+#         with open(token_path, "rb") as f:
+#             creds = pickle.load(f)
+#
+#     if not creds or not creds.valid:
+#         if creds and creds.expired and creds.refresh_token:
+#             creds.refresh(Request())
+#         else:
+#             flow  = InstalledAppFlow.from_client_secrets_file(str(creds_path), SCOPES)
+#             creds = flow.run_local_server(port=0)
+#         with open(token_path, "wb") as f:
+#             pickle.dump(creds, f)
+#
+#     return creds
 
 
 def load_mapping(sheet_id: str) -> list[dict]:
@@ -476,8 +510,14 @@ def load_mapping(sheet_id: str) -> list[dict]:
         raise ValueError(f"Tab '{MAPPING_TAB}' in sheet {sheet_id!r} is empty.")
 
     headers = [h.strip() for h in rows[0]]
+    def clean(header: str, cell: str) -> str:
+        # Sheet names are kept exactly as typed: a real sheet can end in a
+        # space, and main() matches the name against the workbook's actual
+        # sheet names. Every other value is trimmed.
+        return html.unescape(cell if header == "sheet_name" else cell.strip())
+
     return [
-        {headers[i]: html.unescape(cell.strip()) if cell else ""
+        {headers[i]: (clean(headers[i], cell) if cell else "")
          for i, cell in enumerate(row)}
         for row in rows[1:]
         if any(cell.strip() for cell in row)
@@ -626,6 +666,16 @@ def validate(con, archive_file_name):
     return failures, warnings
 
 
+def _is_setup_statement(stmt: str) -> bool:
+    """True for the extension install/load and macro-definition statements at
+    the top of every generated SQL file. They're safe to re-run, so they
+    execute outside the per-file transaction used for the reload."""
+    code = "\n".join(
+        line for line in stmt.splitlines() if not line.lstrip().startswith("--")
+    ).lstrip().upper()
+    return code.startswith(("INSTALL", "LOAD", "CREATE OR REPLACE MACRO"))
+
+
 def print_issue(issue, symbol):
     print(f"      {symbol} [{issue['check']}] {issue['detail']}")
     for r in issue.get("rows", [])[:5]:
@@ -684,6 +734,7 @@ def main():
             continue
         by_file[fname].append((i, row))
 
+    generated: list[tuple[Path, str]] = []  # (sql file, archive_file_name it loads)
     written = 0
     for fname, row_pairs in sorted(by_file.items()):
         file_path = data_dir / fname
@@ -708,15 +759,26 @@ def main():
             f"-- Sheet(s)    : {', '.join(r.get('sheet_name','') for _, r in row_pairs)}\n",
             f"-- =======================================================================\n\n",
         ]
+        # Exact sheet names inside the source workbook, so the mapping doc's name
+        # can be matched to the real one even if they differ only by leading or
+        # trailing spaces (a sheet really can be named "Report ").
+        actual_sheet_names = get_sheet_names(file_path) if file_path.exists() else None
+
         for row_num, row in row_pairs:
-            original_sheet = html.unescape(row.get("sheet_name", "").strip())
-            read_sheet = rename_map.get(original_sheet, original_sheet)
+            wanted_sheet = html.unescape(row.get("sheet_name", ""))
+            resolved_sheet = resolve_sheet_name(wanted_sheet, actual_sheet_names)
+            if actual_sheet_names and resolved_sheet != wanted_sheet:
+                print(f"    NOTE: mapping sheet {wanted_sheet!r} matched "
+                      f"workbook sheet {resolved_sheet!r}")
+            row = {**row, "sheet_name": resolved_sheet}
+            read_sheet = rename_map.get(resolved_sheet, resolved_sheet)
             parts.append(generate_block(row, str(read_file_path), row_num,
                                           read_sheet_name=read_sheet))
 
         safe = re.sub(r"[^\w.\-]", "_", Path(fname).stem)
         out  = output_dir / f"{safe}.sql"
         out.write_text("".join(parts), encoding="utf-8")
+        generated.append((out, read_file_path.name))
         sheets = [r.get("sheet_name","") for _, r in row_pairs]
         print(f"  Wrote {out.name}  ({len(row_pairs)} sheet(s): {', '.join(sheets)})")
         written += 1
@@ -729,13 +791,12 @@ def main():
     db_path = Path(args.db)
     sql_dir = output_dir
 
-    sql_files = sorted(
-        f for f in sql_dir.glob("*.sql")
-        if f.name not in ("00_create_table_credit.sql",)
-    )
+    # Load exactly the files this run just generated (in name order) — not
+    # whatever else may be sitting in the output folder.
+    sql_files = sorted(generated, key=lambda item: item[0].name)
 
     if not sql_files:
-        print(f"No SQL files found in {sql_dir}")
+        print(f"No SQL files were generated in {sql_dir}")
         return
 
     print(f"\nConnecting to {db_path} ...")
@@ -749,36 +810,72 @@ def main():
     quality_failed = []
     all_warnings   = []
     succeeded      = []
+    total_inserted = 0
+    total_replaced = 0
+    target_table   = TARGET_TABLE
 
-    for sql_file in sql_files:
+    for sql_file, archive_name in sql_files:
         print(f"  {'─'*56}")
         print(f"  File: {sql_file.name}")
 
-        # ── Step 1: Load ──────────────────────────────────────────────
+        # ── Step 1: Load (replacing this file's earlier rows, if any) ─
         sql = sql_file.read_text(encoding="utf-8")
 
         # Split into individual statements and execute one at a time.
-        # This avoids DuckDB re-encoding special characters (e.g. & → &amp;)
-        # that can occur when passing a large multi-statement string.
         statements = [s.strip() for s in sql.split(";") if s.strip()]
+        setup_statements = [s for s in statements if _is_setup_statement(s)]
+        data_statements  = [s for s in statements if not _is_setup_statement(s)]
 
+        existing_rows = 0
         try:
-            count_before = con.execute(
-                f"SELECT COUNT(*) FROM {TARGET_TABLE}"
-            ).fetchone()[0]
-            for stmt in statements:
+            for stmt in setup_statements:
                 con.execute(stmt)
-            count_after = con.execute(
-                f"SELECT COUNT(*) FROM {TARGET_TABLE}"
-            ).fetchone()[0]
+
+            if REPLACE_EXISTING_ROWS:
+                existing_rows = con.execute(
+                    f"SELECT COUNT(*) FROM {target_table} WHERE archive_file_name = ?",
+                    [archive_name],
+                ).fetchone()[0]
+
+            # Delete-then-reload happens in one transaction, so if the reload
+            # fails the file's earlier rows are put back untouched.
+            con.begin()
+            try:
+                if existing_rows:
+                    con.execute(
+                        f"DELETE FROM {target_table} WHERE archive_file_name = ?",
+                        [archive_name],
+                    )
+                count_before = con.execute(
+                    f"SELECT COUNT(*) FROM {target_table}"
+                ).fetchone()[0]
+                for stmt in data_statements:
+                    con.execute(stmt)
+                count_after = con.execute(
+                    f"SELECT COUNT(*) FROM {target_table}"
+                ).fetchone()[0]
+                con.commit()
+            except Exception:
+                try:
+                    con.rollback()
+                except Exception:
+                    pass
+                raise
+
             rows_added = count_after - count_before
+            total_inserted += rows_added
+            total_replaced += existing_rows
+            if existing_rows:
+                print(f"  ↻ Replaced {existing_rows:,} existing row(s) from an earlier load")
             print(f"  ✓ Loaded  ({rows_added:,} rows inserted)")
         except Exception as e:
             print(f"  ✗ LOAD FAILED")
             for line in str(e).splitlines():
                 print(f"      {line}")
+            if existing_rows:
+                print(f"      (the {existing_rows:,} existing row(s) for this file were left unchanged)")
             load_failed.append((sql_file.name, str(e)))
-            get_meta(con)
+            get_meta(con)  # clean up meta table even on failure
             continue
 
         if rows_added == 0:
@@ -799,13 +896,10 @@ def main():
                 print(f"  ⚠  Skipped rows: {msg}")
                 file_warnings.append({"check": "Skipped rows", "detail": msg})
 
-        # ── Step 3: Identify archive_file_name ────────────────────────
-        archive_file_name = con.execute(f"""
-            SELECT DISTINCT archive_file_name
-            FROM {TARGET_TABLE}
-            ORDER BY rowid DESC
-            LIMIT 1
-        """).fetchone()[0]
+        # ── Step 3: Validate the rows just loaded ─────────────────────
+        # archive_name is known from generation, so there's no need to guess
+        # it from the most recently inserted row.
+        archive_file_name = archive_name
 
         # ── Step 4: Validate data quality ─────────────────────────────
         failures, warnings = validate(con, archive_file_name)
@@ -837,7 +931,8 @@ def main():
     print(f"  Load failures    : {len(load_failed)}")
     print(f"  Quality failures : {len(quality_failed)}")
     print(f"  Warnings         : {len(all_warnings)}")
-    print(f"  Rows added       : {after - before:,}  ({before:,} → {after:,})")
+    print(f"  Rows added       : {total_inserted:,}  ({before:,} → {after:,})")
+    print(f"  Rows replaced    : {total_replaced:,}")
 
     if load_failed:
         print(f"\n  Load failures:")

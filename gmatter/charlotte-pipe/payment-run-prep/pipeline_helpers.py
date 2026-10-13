@@ -252,3 +252,45 @@ def sanitize_ampersand_sheets(source_path: Path, cache_dir: Path) -> Tuple[Path,
     print(f"    Sanitized '&' in sheet name(s) for '{source_path.name}': "
           f"{rename_map}")
     return new_path, rename_map
+
+
+# ---------------------------------------------------------------------------
+# Exact sheet-name matching
+# ---------------------------------------------------------------------------
+
+def get_sheet_names(path: Path) -> Optional[List[str]]:
+    """Exact sheet names in an .xlsx workbook, spaces and all. Opens the file
+    read-only, so it's fast. Returns None if the file can't be opened this way
+    (missing, not .xlsx, corrupt) — callers should fall back to the name as
+    written in the mapping doc."""
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True)
+        try:
+            return list(wb.sheetnames)
+        finally:
+            wb.close()
+    except Exception:
+        return None
+
+
+def resolve_sheet_name(wanted: str, actual_names: Optional[List[str]]) -> str:
+    """Return the workbook's real name for the sheet a mapping doc row refers
+    to, tolerating leading/trailing-space differences (a sheet can genuinely
+    be named "Report " with a trailing space, and mapping docs often lose it).
+
+      1. exact match wins
+      2. otherwise the single workbook sheet that matches once spaces are
+         trimmed from both sides
+      3. otherwise (no workbook info, no match, or more than one candidate)
+         the trimmed mapping name, so DuckDB reports a clear error
+
+    Only whitespace at the ends is ignored — case and everything inside the
+    name must still match."""
+    if not actual_names:
+        return wanted.strip()
+    if wanted in actual_names:
+        return wanted
+    matches = [name for name in actual_names if name.strip() == wanted.strip()]
+    if len(matches) == 1:
+        return matches[0]
+    return wanted.strip()

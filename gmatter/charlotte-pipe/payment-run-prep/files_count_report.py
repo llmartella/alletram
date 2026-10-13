@@ -18,7 +18,7 @@ Writes the combined result to a brand-new Google Sheet named
 actually contains the base/credit mapping docs (verified via each doc's real
 parent folder, not just the month folder search result).
 
-Columns written: file_name, count_of_records, file_type, purpose
+Columns written: file_name, count_of_records, file_source, purpose
 
 Requires oauth_desktop_app.json in the same directory as this script (needs
 full spreadsheets + drive scopes, since it creates and moves a new file —
@@ -273,7 +273,7 @@ def main():
     template_counts = get_template_counts()
     print(f"  {len(template_counts)} file(s), {sum(template_counts.values()):,} total record(s)")
 
-    rows = [["file_name", "count_of_records", "file_type", "purpose"]]
+    rows = [["file_name", "count_of_records", "file_source", "purpose"]]
 
     for file_name, count in sorted(base_counts.items()):
         rows.append([file_name, count, "unspecified", "contractor_base"])
